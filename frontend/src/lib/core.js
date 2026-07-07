@@ -1,11 +1,12 @@
-// Hackathon OS — core engine. No DOM, no React. `node src/lib/core.js` runs the self-test.
-// The generative work (ideas, decks, code) is Claude's job — this module keeps the clock
-// and compiles your context into precision prompts. Deterministic bits (milestones, pace,
-// rubric pre-score) stay local so they work offline and instantly.
+// Hackathon OS — deterministic core. No DOM, no React, no network.
+// `node src/lib/core.js` runs the self-test.
+// This is the OS's spine: the clock, the gates, the pace engine, and offline
+// fallbacks for every agent — so the app works with zero API key and never
+// dies mid-demo. The agents (lib/agents.js) make it smart; this keeps it alive.
 'use strict';
 const H = 3600e3, MIN = 60e3;
 
-// ---------- sponsor / prize-track map (powers the prompt's prize mapping) ----------
+// ---------- sponsor knowledge base — offline fallback for the scout agent ----------
 export const SPONSORS = {
   aws:        { name: 'AWS',          apis: ['Bedrock', 'Lambda', 'S3'],             prize: 'Best use of AWS' },
   gcloud:     { name: 'Google Cloud', apis: ['Vertex AI', 'Firebase', 'Cloud Run'],  prize: 'Best use of Google Cloud' },
@@ -19,7 +20,33 @@ export const SPONSORS = {
   anthropic:  { name: 'Anthropic',    apis: ['Claude API', 'Tool use'],              prize: 'Best use of Claude' },
 };
 
-// ---------- Deadline Guardian: milestone engine (local + real-time, never Claude's job) ----------
+// loose name→key matcher so free-typed sponsor names hit the built-in map
+const sponsorKeyFor = raw => {
+  const n = String(raw).trim().toLowerCase();
+  if (!n) return null;
+  return Object.keys(SPONSORS).find(k => {
+    const s = SPONSORS[k].name.toLowerCase();
+    return n === k || n.includes(k) || n.includes(s) || s.includes(n);
+  }) || null;
+};
+
+// offline sponsor briefing: known names get real intel, unknown ones an honest stub
+export function fallbackScout(names = []) {
+  return names.filter(n => String(n).trim()).map(n => {
+    const k = sponsorKeyFor(n);
+    const s = k ? SPONSORS[k] : null;
+    return {
+      name: s ? s.name : String(n).trim(),
+      apis: s ? s.apis : [],
+      prize: s ? s.prize : 'Best use of ' + String(n).trim(),
+      angle: s
+        ? `Integrate ${s.apis[0]} visibly in the demo path — judges must see it working.`
+        : 'Not in the offline map — check their docs for a hackathon-friendly API and demo it visibly.',
+    };
+  });
+}
+
+// ---------- milestone engine ----------
 export function genMilestones(start, end, reqs = { devpost: true, video: true, repo: true }) {
   const W = end - start;
   // ponytail: linear squeeze for short windows, floor 0.5 — good for 12–48h; sub-12h windows need a custom plan anyway
@@ -48,7 +75,6 @@ export function paceState(milestones, now) {
   return missed.length ? 'behind' : 'ok';
 }
 
-// escalating reminder cadence for an overdue milestone, by time left in the window
 export function remindEvery(msLeft) {
   if (msLeft < 15 * MIN) return MIN;
   if (msLeft < H) return 5 * MIN;
@@ -67,33 +93,8 @@ export function fmtShort(ms) {
   return h ? h + 'h' + (m ? m + 'm' : '') : m + 'm';
 }
 
-// ---------- consensus judging rubric (shared by the local pre-score and every prompt) ----------
-export const RUBRIC = { innovation: 0.275, technical: 0.25, impact: 0.25, design: 0.15, presentation: 0.075 };
+// ---------- judging rubric ----------
 export const RUBRIC_LINE = 'Innovation 27.5% · Technical execution 25% · Impact/feasibility 25% · Design 15% · Presentation 7.5%';
-export const RUBRIC_TIPS = {
-  innovation: 'Name what you do that the obvious alternative doesn\'t — one "unlike X, we Y" sentence.',
-  technical: 'Say the hard part out loud: the pipeline, the auth model, the scan. Judges can\'t score what you don\'t mention.',
-  impact: 'Add ONE number: hours saved, % faster, $ at risk. Any real number beats adjectives.',
-  design: 'Add 2 screenshots and mention the UI flow — design points are the cheapest points on the board.',
-  presentation: 'Cut to ≤4 features. One wow demoed beats six described.',
-};
-
-// local, instant, offline README pre-score — spend Claude tokens on a draft that already scores
-export function rubricScore(text, features = [], idea = null) {
-  const t = (text || '').toLowerCase();
-  const hits = re => (t.match(re) || []).length;
-  const cl = v => Math.max(20, Math.min(98, Math.round(v)));
-  const sub = {
-    innovation: cl(55 + (idea ? 15 : 0) + hits(/unlike|first|only|novel|instead of|no one/g) * 6 - hits(/chatbot|gpt wrapper|ai[- ]powered assistant/g) * 10),
-    technical: cl(45 + Math.min(30, hits(/\bapi\b|auth|oauth|websocket|pipeline|ci\/cd|database|encrypt|token|webhook|sandbox|scan/g) * 4) + (features.length >= 2 ? 8 : 0)),
-    impact: cl(40 + Math.min(35, hits(/\d+\s?%|\$\d|\b\d+x\b|hours? saved|per (week|day|month)|users?|teams?|companies/g) * 7)),
-    design: cl(50 + hits(/screenshot|\bui\b|\bux\b|design|dark mode|responsive|figma/g) * 6),
-    presentation: cl(60 + (features.length > 0 && features.length <= 4 ? 15 : features.length > 6 ? -10 : 5)),
-  };
-  const total = Math.round(Object.entries(RUBRIC).reduce((a, [k, w]) => a + sub[k] * w, 0));
-  const tips = Object.keys(sub).sort((a, b) => sub[a] - sub[b]).slice(0, 2).map(k => ({ cat: k, tip: RUBRIC_TIPS[k] }));
-  return { sub, total, tips };
-}
 
 export const RECORD_CHECKLIST = [
   'Record in one take at final resolution (1080p) — no post edits at 3am',
@@ -107,95 +108,130 @@ export const RECORD_CHECKLIST = [
   'Put a 30-second backup GIF in the repo README',
 ];
 
-// ============================================================================
-// PROMPT COMPILERS — the app's voice to Claude. Everything the old hardcoded
-// generators knew (prize mapping, feasibility honesty, one-wow scoping, the
-// rubric, the gates) is compiled into the prompt instead of faked locally.
-// ============================================================================
-
-export function buildIdeaPrompt({ tracks = [], problem = '', stack = 'React, Tailwind, FastAPI', budgetH = 24 } = {}) {
-  const trackLines = tracks.length
-    ? tracks.map(k => SPONSORS[k]).filter(Boolean).map(s => `- ${s.name}: ${s.apis.join(', ')} — prize: "${s.prize}"`).join('\n')
-    : '- (none listed — optimize for the overall grand prize instead)';
-  return `You are my hackathon strategist. I need project ideas I can actually win with — not a brainstorm dump.
-
-## My constraints
-- Team stack: ${stack} (anything outside it costs extra hours — price that in)
-- Realistic build budget: ${budgetH} hours of hands-on-keyboard time
-- Problem statement / theme: ${problem.trim() || '(open theme — pick the strongest wedge)'}
-
-## Sponsor prize tracks at this event
-${trackLines}
-
-## Non-negotiables for every idea
-1. A real product in a real workflow — no thin AI-wrapper demos.
-2. Lean into DevSecOps / security angles wherever a track allows; that is my edge.
-3. ONE wow feature scoped as the whole MVP — demoable in under 90 seconds.
-4. Name the sponsor APIs each idea genuinely qualifies for (no prize-bait stretches).
-5. A one-sentence differentiator in the form "unlike X, we Y".
-
-## Judges score on (weight your picks accordingly)
-${RUBRIC_LINE}
-
-## Output — exactly 5 ideas, this format per idea
-### <n>. <Name> — feasibility <score>/100 (<Safe bet | Doable | Stretch | Trap>)
-- **Wow MVP:** <the one feature, described as a demo moment>
-- **Differentiator:** unlike <X>, we <Y>
-- **Qualifies for:** <sponsor → the specific API used>
-- **Hour split:** <h> build / <h> integrate / <h> polish — must fit ${budgetH}h with slack
-- **Dies if:** <the single riskiest assumption>
-
-Be brutally honest on feasibility — a "Trap" label saves my hackathon. Rank by expected-prize-fit × feasibility, then close with the ONE you would build and the first file you would create.`;
+// ---------- tolerant JSON extraction (agent responses) ----------
+export function extractJson(text) {
+  const t = String(text).replace(/```(?:json)?/g, '');
+  const a = t.indexOf('{'), b = t.lastIndexOf('}');
+  if (a < 0 || b <= a) throw new Error('no JSON in response');
+  return JSON.parse(t.slice(a, b + 1));
 }
 
-export function buildKickoffPrompt({ idea = null, stack = 'React 18 + Vite + Tailwind CSS v4 frontend · Python FastAPI backend', run = null, budgetH = 24 } = {}) {
-  // live run → absolute gate times; otherwise a relative T-minus plan for the budget
-  const W = run ? run.end - run.start : budgetH * H;
-  const ms = run?.milestones?.length ? run.milestones : genMilestones(0, W);
-  const endAt = run ? run.end : W;
-  const gates = ms.map(m =>
-    `- [${m.hard ? 'HARD' : 'soft'}] T-${fmtShort(endAt - m.at)}${run ? ' (' + new Date(m.at).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' }) + ')' : ''} — ${m.label}${m.done ? ' [DONE]' : ''}`
-  ).join('\n');
-  return `You are my hackathon pair programmer. The clock is running — we ship or we lose.
+// ============================================================================
+// DETERMINISTIC FALLBACKS — every agent has one, so no key / no wifi / a bad
+// API day never kills the OS. Same output shapes as the agents produce.
+// ============================================================================
 
-## Project
-${idea ? `${idea.name} — ${idea.diff || ''}\nWow feature (this IS the MVP): ${idea.wow || '(ask me)'}` : '(idea not locked yet — ask me for it before writing any code)'}
+// ponytail: curated bank — the offline floor, not the ceiling; the strategist agent replaces it when a key exists
+const IDEA_BANK = [
+  { name: 'PR Tripwire', baseH: 14, kw: ['secret', 'ci', 'leak', 'security', 'code', 'devops', 'pipeline', 'git'],
+    sponsors: ['github', 'snyk', 'aws'],
+    wow: 'Commit a live AWS key in a PR — bot revokes it and comments the fix within 10 seconds.',
+    diff: 'unlike repo scanners, we guard the merge itself' },
+  { name: 'IAM X-Ray', baseH: 18, kw: ['cloud', 'security', 'access', 'audit', 'iam', 'permission'],
+    sponsors: ['aws', 'gcloud'],
+    wow: 'Time-slider showing exactly who gained prod access this week, and via which policy.',
+    diff: 'unlike policy dumps, we answer "what changed"' },
+  { name: 'Postmortem Autopilot', baseH: 12, kw: ['incident', 'sre', 'slack', 'ops', 'outage', 'postmortem'],
+    sponsors: ['anthropic', 'mongodb'],
+    wow: 'Paste a raw Slack incident export — publishable postmortem with timeline in 30 seconds.',
+    diff: 'unlike incident tools, we work on the messy chat you already have' },
+  { name: 'Consent Ledger', baseH: 20, kw: ['health', 'privacy', 'data', 'gdpr', 'consent', 'patient', 'medical'],
+    sponsors: ['auth0', 'mongodb', 'gcloud'],
+    wow: 'Revoke consent in the UI — watch downstream data access flip off, live.',
+    diff: 'unlike consent PDFs, we enforce consent at runtime' },
+  { name: 'Webhook Notary', baseH: 10, kw: ['payment', 'api', 'fintech', 'integration', 'webhook', 'stripe'],
+    sponsors: ['stripe', 'cloudflare'],
+    wow: 'Replay a tampered Stripe webhook — rejected with a signed audit entry, next to the real one.',
+    diff: 'unlike API tooling, we treat webhooks as a security boundary' },
+  { name: 'SBOM Sentinel', baseH: 12, kw: ['supply', 'dependency', 'security', 'cve', 'vuln', 'package'],
+    sponsors: ['snyk', 'github', 'twilio'],
+    wow: 'New CVE drops — SMS naming the exact affected service in under a minute.',
+    diff: 'unlike scanners, we map CVEs to your deployed services' },
+  { name: 'Evidence Robot', baseH: 16, kw: ['compliance', 'audit', 'soc2', 'enterprise', 'evidence', 'iso'],
+    sponsors: ['aws', 'gcloud', 'github'],
+    wow: 'One click — this week\'s access reviews, backup proofs and scan results land in an audit folder.',
+    diff: 'unlike GRC suites, engineers take zero screenshots' },
+  { name: 'Phish Triage', baseH: 15, kw: ['email', 'phishing', 'smb', 'security', 'scam', 'fraud'],
+    sponsors: ['anthropic', 'twilio', 'cloudflare'],
+    wow: 'Forward a live phish — defanged verdict card back by SMS in 20 seconds.',
+    diff: 'unlike enterprise sec-ops, we serve companies with no security team' },
+  { name: 'Drift Watch', baseH: 22, kw: ['terraform', 'infra', 'cloud', 'devops', 'iac', 'config'],
+    sponsors: ['aws', 'gcloud'],
+    wow: 'Someone click-ops an S3 bucket public — a red diff appears on the dashboard, live.',
+    diff: 'unlike terraform plan, we catch the console cowboy in minutes' },
+  { name: 'On-Call Brief', baseH: 11, kw: ['oncall', 'sre', 'ops', 'alert', 'handoff', 'pager'],
+    sponsors: ['mongodb', 'anthropic', 'twilio'],
+    wow: 'Shift change — one-page brief with the three things most likely to page you tonight.',
+    diff: 'unlike dashboards, we optimize the handoff minute' },
+];
 
-## Stack (do not deviate, do not add dependencies without asking)
-${stack}
-
-## Deadline plan — hold me to every gate${run ? ` (submission closes ${new Date(run.end).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' })})` : ` (${budgetH}h window, times relative to submission)`}
-${gates}
-
-## Rules of engagement
-1. Scaffold first: frontend/ (Vite + React + Tailwind v4), backend/ (FastAPI with /api/health), .gitignore + .env from commit one, GitHub Actions CI, README with run instructions. Hello-world must run end-to-end before any feature work.
-2. Build the wow feature FIRST, ugly. Polish only after the full demo path clicks through.
-3. After the CODE FREEZE gate passes: refuse my feature requests — bugfixes only. Quote the gate back at me when I try.
-4. Every commit leaves the demo path working. If a change breaks it, revert before continuing.
-5. Security hygiene by default: no secrets in the client, validate inputs at the API boundary, least-privilege keys.
-6. If I fall behind pace, propose what to CUT — never how to "catch up".
-
-Start now: scaffold the repo, then state the first gate and what "done" looks like for it.`;
+export function fallbackIdeas({ tracks = [], theme = '', budgetH = 24 } = {}) {
+  const p = (theme || '').toLowerCase();
+  const trackKeys = new Set((tracks || []).map(sponsorKeyFor).filter(Boolean)); // tracks are free-typed names
+  return IDEA_BANK.map(idea => {
+    const kwHits = idea.kw.filter(k => p.includes(k)).length;
+    const trackHits = idea.sponsors.filter(k => trackKeys.has(k)).length;
+    const ratio = budgetH / idea.baseH;
+    const feasibility = Math.max(5, Math.min(97, Math.round(39 + 40 * Math.min(ratio, 1.5))));
+    const rel = kwHits * 6 + trackHits * 10 + feasibility * 0.3;
+    return {
+      name: idea.name, feasibility, rel,
+      label: feasibility >= 75 ? 'Safe bet' : feasibility >= 60 ? 'Doable' : feasibility >= 45 ? 'Stretch' : 'Trap',
+      wow: idea.wow, differentiator: idea.diff,
+      sponsors: idea.sponsors.filter(k => SPONSORS[k]).map(k => ({ name: SPONSORS[k].name, api: SPONSORS[k].apis[0], prize: SPONSORS[k].prize })),
+      hours: { build: Math.round(idea.baseH * 0.6), integrate: Math.round(idea.baseH * 0.25), polish: Math.round(idea.baseH * 0.15) },
+      diesIf: 'the sponsor API integration takes longer than one evening',
+      buildPlan: ['Scaffold repo, hello-world deployed end-to-end', `Build the wow path: ${idea.wow}`, 'Wire real data through the full demo path', 'Record the demo, then (and only then) polish'],
+    };
+  }).sort((a, b) => b.rel - a.rel).slice(0, 5).map(({ rel, ...i }) => i);
 }
 
-export function buildPitchPrompt({ readme = '', idea = null, run = null } = {}) {
-  return `You are my pitch engineer. Build my complete hackathon pitch kit from the README below. Optimize every word against the judging rubric — not for completeness.
+export function fallbackIntervention(milestones, now, end) {
+  const missed = milestones.filter(m => !m.done && m.at <= now);
+  const first = missed[0];
+  return {
+    diagnosis: `${missed.length} gate${missed.length === 1 ? '' : 's'} overdue with ${fmtShort(end - now)} left on the clock.`,
+    cut: ['Any feature not on the demo path', 'Polish, styling passes, refactors', 'Extra integrations beyond the prize track you\'re targeting'],
+    keep: ['The wow feature demo path, end to end', 'The submission requirements: video, Devpost, public repo'],
+    nextAction: first ? `Clear "${first.label}" right now — do it or consciously cut it. Not deciding is the trap.` : 'Re-check the plan against the clock.',
+  };
+}
 
-## Judging rubric (the only thing that matters)
-${RUBRIC_LINE}
-
-## Deliverables — all three, in one pass
-1. **7-slide deck** — title (with differentiator) → problem → solution → live demo → under the hood → impact → ask. Max 4 bullets per slide. The impact slide MUST carry at least one real number. Then generate it as an actual dark-themed .pptx using python-pptx.
-2. **Time-coded 3:00 demo script** — 0:00 hook (pain + a number) / 0:15 problem / 0:35 WOW demo / 1:35 how it works + the security angle / 2:05 impact / 2:35 ask + prize tracks / 3:00 end, under time. Narrate outcomes, not clicks.
-3. **Recording checklist** — tailor this baseline to my project:
-${RECORD_CHECKLIST.map(c => '   - ' + c).join('\n')}
-${idea ? `\n## Locked idea context\n${idea.name} — ${idea.diff || ''}\nWow: ${idea.wow || ''}\n` : ''}${run ? `\n## Time pressure\nSubmission closes ${new Date(run.end).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' })} — one pass, keep it tight.\n` : ''}
-## My README
-"""
-${readme.trim()}
-"""
-
-If the README has no number for the impact slide, ask me for ONE number and nothing else; otherwise produce everything without questions.`;
+export function fallbackPitch({ name = 'Project', theme = '', pick = null, readme = '' } = {}) {
+  const title = pick?.name || name;
+  const wow = pick?.wow || 'the core flow, live';
+  const diff = pick?.differentiator || 'built in one hackathon window';
+  const prizes = (pick?.sponsors || []).map(s => s.prize);
+  const lines = readme.split('\n');
+  const features = lines.filter(l => /^\s*[-*+]\s+/.test(l)).map(l => l.replace(/^\s*[-*+]\s+/, '').trim()).slice(0, 4);
+  // no README → distinct copy per section instead of repeating the wow line everywhere
+  const solution = features.length ? features : [diff[0].toUpperCase() + diff.slice(1), 'One focused product, one wow feature'];
+  const built = features.length ? features : ['One wow feature, built end-to-end before any polish', 'React + Tailwind frontend, FastAPI backend', 'Security-first: least privilege, no secrets in the client'];
+  return {
+    devpost: {
+      title,
+      tagline: diff[0].toUpperCase() + diff.slice(1),
+      description: `## What it does\n${wow}\n\n## Why it matters\n${theme || 'The status quo is manual, slow, and error-prone'} — ${diff}.\n\n## How we built it\n${built.map(f => '- ' + f).join('\n')}\n\n## What's next\nPilot with one real team.`,
+    },
+    deck: [
+      { title: title + ' — ' + diff, bullets: [] },
+      { title: 'The problem', bullets: ['The status quo is manual, slow, and error-prone', 'Who feels it: the person on the hook when it breaks', 'Replace this bullet with a number'] },
+      { title: 'The solution', bullets: solution },
+      { title: 'Live demo', bullets: ['WOW: ' + wow, 'Pre-recorded — no live-demo roulette', 'Backup GIF in the repo README'] },
+      { title: 'Under the hood', bullets: ['React + Tailwind + FastAPI', 'Security-first: least privilege, no secrets in the client'] },
+      { title: 'Impact', bullets: ['Put ONE number here: hours saved / % faster / $ protected', ...(prizes.length ? ['Qualifies for: ' + prizes.join(' · ')] : [])] },
+      { title: 'The ask', bullets: ['Judges: score us on the demo — it\'s real', 'Next: pilot with one real team', 'Repo + video linked on Devpost'] },
+    ],
+    script: [
+      ['0:00', 'Hook — one sentence of pain, with a number in it'],
+      ['0:15', 'Problem — who bleeds, how often, what it costs'],
+      ['0:35', 'WOW — ' + wow + ' (pre-recorded; narrate outcomes, not clicks)'],
+      ['1:35', 'How — stack in one breath; name the hard part and the security angle'],
+      ['2:05', 'Impact — the number, before/after, who wants this on Monday'],
+      ['2:35', 'Ask — prize tracks you qualify for + what you\'d build next'],
+      ['3:00', 'END — under time. Stop talking.'],
+    ],
+  };
 }
 
 // ---------- self-test (node src/lib/core.js) ----------
@@ -210,36 +246,40 @@ export function selftest() {
   A(genMilestones(t0, t1, { devpost: false, video: false, repo: false }).length === 8, 'req-tied milestones drop');
   A(paceState(ms, t0) === 'ok', 'fresh run is ok');
   A(paceState(ms, ms[0].at + 1) === 'behind', 'one soft miss = behind');
-  const hard = ms.find(m => m.hard);
-  A(paceState(ms, hard.at + 1) === 'danger', 'hard gate miss = danger');
+  A(paceState(ms, ms.find(m => m.hard).at + 1) === 'danger', 'hard gate miss = danger');
   A(remindEvery(10 * MIN) < remindEvery(2 * H) && remindEvery(2 * H) < remindEvery(10 * H), 'reminder cadence escalates');
   A(fmtDur(-61000) === '-00:01:01' && fmtShort(90 * MIN) === '1h30m', 'formatters');
 
-  const r1 = rubricScore('a tool', ['f1'], null);
-  const r2 = rubricScore('saves 10 hours saved per week for 500 users, 40 % faster, api auth pipeline encrypt webhook', ['f1', 'f2'], { name: 'x' });
-  A(r2.total > r1.total, 'better content scores higher');
-  A(r1.total >= 0 && r2.total <= 100, 'rubric in bounds');
+  A(extractJson('```json\n{"a":1}\n```').a === 1, 'extractJson strips fences');
+  A(extractJson('prose before {"a":{"b":2}} prose after').a.b === 2, 'extractJson tolerates prose');
+  let threw = false; try { extractJson('no json here'); } catch { threw = true; }
+  A(threw, 'extractJson throws on garbage');
 
-  const ip = buildIdeaPrompt({ tracks: ['github', 'snyk'], problem: 'ci security', stack: 'React, Tailwind, FastAPI', budgetH: 36 });
-  A(ip.includes('Best use of GitHub') && ip.includes('Best security hack'), 'idea prompt maps prize tracks');
-  A(ip.includes('36 hours') && ip.includes('React, Tailwind, FastAPI'), 'idea prompt embeds constraints');
-  A(ip.includes('exactly 5 ideas') && ip.includes(RUBRIC_LINE), 'idea prompt fixes format + rubric');
-  A(buildIdeaPrompt({}).includes('open theme'), 'idea prompt handles empty problem');
+  const ideas = fallbackIdeas({ tracks: ['GitHub', 'Snyk'], theme: 'ci security secrets leak', budgetH: 36 });
+  A(ideas.length === 5, 'fallback returns 5 ideas');
+  A(ideas[0].name === 'PR Tripwire', 'fallback relevance ranking works with free-typed sponsor names');
+  A(ideas.every(i => i.feasibility >= 5 && i.feasibility <= 97 && i.buildPlan.length && i.sponsors.length), 'fallback idea shape complete');
+  const tight = fallbackIdeas({ budgetH: 6 });
+  A(Math.max(...tight.map(i => i.feasibility)) < Math.max(...ideas.map(i => i.feasibility)), 'tight budget lowers feasibility');
 
-  const idea = { name: 'PR Tripwire', wow: 'revoke a leaked key in 10s', diff: 'guards the merge' };
-  const kp = buildKickoffPrompt({ idea, budgetH: 24 });
-  A(kp.includes('PR Tripwire') && kp.includes('CODE FREEZE'), 'kickoff embeds idea + freeze gate');
-  A((kp.match(/- \[(HARD|soft)\]/g) || []).length === 11, 'kickoff embeds all 11 gates');
-  const run = { start: t0, end: t1, milestones: ms };
-  A(buildKickoffPrompt({ idea, run }).includes('submission closes'), 'kickoff uses live run when present');
-  A(buildKickoffPrompt({}).includes('not locked yet'), 'kickoff handles missing idea');
+  const sc = fallbackScout(['github', 'Google Cloud', 'TotallyNewCo', '  ']);
+  A(sc.length === 3, 'scout drops blank names');
+  A(sc[0].name === 'GitHub' && sc[0].apis.length > 0, 'scout maps known sponsor loosely');
+  A(sc[1].name === 'Google Cloud' && sc[1].prize.includes('Google'), 'scout matches multi-word names');
+  A(sc[2].apis.length === 0 && sc[2].prize === 'Best use of TotallyNewCo' && sc[2].angle.includes('offline map'), 'scout is honest about unknown sponsors');
 
-  const pp = buildPitchPrompt({ readme: '# My Proj\n- does a thing', idea, run });
-  A(pp.includes('# My Proj') && pp.includes(RUBRIC_LINE), 'pitch prompt embeds readme + rubric');
-  A(pp.includes('python-pptx') && pp.includes('3:00 demo script'), 'pitch prompt demands real deliverables');
-  A(pp.includes('PR Tripwire') && pp.includes('Submission closes'), 'pitch prompt carries idea + deadline context');
+  const iv = fallbackIntervention(ms, ms.find(m => m.hard).at + 1, t1);
+  A(iv.diagnosis.includes('overdue') && iv.cut.length >= 2 && iv.nextAction.includes(ms[0].label), 'fallback intervention targets first overdue gate');
 
-  console.log('PASS — core selftest (' + ms.length + ' milestones, 3 prompt compilers, rubric ' + r2.total + '/100)');
+  const pk = fallbackPitch({ pick: ideas[0], theme: 'ci security', readme: '# x\n- feat one\n- feat two' });
+  A(pk.deck.length === 7 && pk.script.length === 7, 'fallback pitch: 7 slides + 7 beats');
+  A(pk.devpost.title === 'PR Tripwire' && pk.devpost.description.includes('feat one'), 'fallback devpost carries pick + readme');
+  const pk2 = fallbackPitch({ pick: ideas[0] }); // no README — the QA-flagged duplication case
+  const builtSection = pk2.devpost.description.split('How we built it')[1].split('##')[0];
+  A(!builtSection.includes(ideas[0].wow), 'no wow duplication in devpost sections');
+  A(!pk2.deck[2].bullets.includes(ideas[0].wow), 'solution slide is not the wow line again');
+
+  console.log('PASS — core selftest (engine + extractJson + 3 agent fallbacks)');
 }
 
 if (typeof window === 'undefined') selftest();

@@ -1,65 +1,97 @@
 import { useState } from 'react'
-import { rubricScore, buildPitchPrompt } from '../lib/core.js'
-import { Ic, toast, PromptCard } from '../lib/ui.jsx'
+import { RECORD_CHECKLIST } from '../lib/core.js'
+import { Ic, copyText } from '../lib/ui.jsx'
 
-const W = { innovation: '27.5%', technical: '25%', impact: '25%', design: '15%', presentation: '7.5%' }
+// pitchsmith output: auto-drafted when the video/devpost gate approaches, or on demand
+export default function Pitch({ S, draft }) {
+  const [readme, setReadme] = useState('')
+  const p = S.pitch
 
-export default function Pitch({ S, update }) {
-  const [raw, setRaw] = useState('')
-  const [score, setScore] = useState(null)
-  const [prompt, setPrompt] = useState('')
-
-  const prefill = () => {
-    if (!S.idea) return toast('Lock an idea first (Ideas tab), or just paste your README.', 'warn')
-    setRaw(`# ${S.idea.name}\n${S.idea.diff || ''}\n- ${S.idea.wow || ''}\n- Security-first: least privilege, no secrets in the client`)
+  if (!S.mission) {
+    return <div className="glass p-6"><h2>Pitch</h2><p className="text-mut">Launch a mission first — the pitchsmith drafts your submission kit automatically as the demo-video gate approaches.</p></div>
   }
 
-  const gen = () => {
-    const text = raw.trim()
-    if (!text) return toast('Paste your README or feature list first.', 'warn')
-    const lines = text.split('\n')
-    let features = lines.filter(l => /^\s*[-*+]\s+/.test(l)).map(l => l.replace(/^\s*[-*+]\s+/, '').trim()).slice(0, 8)
-    if (!features.length) features = lines.slice(1).filter(l => l.trim() && !l.startsWith('#')).slice(0, 3)
-    const s = rubricScore(text, features, S.idea || null)
-    setScore(s)
-    setPrompt(buildPitchPrompt({ readme: text, idea: S.idea || null, run: S.run || null }))
-    update({ pitch: { at: Date.now() } })
-    toast(`Pre-score ${s.total}/100 — fix the weak spots before spending Claude tokens.`, s.total >= 70 ? 'ok' : 'warn')
-  }
+  const deckText = p ? p.deck.map((s, i) => `${i + 1}. ${s.title}\n${(s.bullets || []).map(b => '   - ' + b).join('\n')}`).join('\n') : ''
+  const scriptText = p ? p.script.map(([t, s]) => `${t}  ${s}`).join('\n') : ''
 
   return (
     <>
       <div className="glass mb-4 p-6">
-        <h2>Pitch Brief</h2>
-        <p className="text-mut">Paste your README → an instant local rubric pre-score (fix weaknesses for free), plus a pitch-engineer prompt that has Claude produce the deck (real .pptx via python-pptx), the 3:00 time-coded demo script, and a tailored recording checklist. Rubric: Innovation 27.5% · Technical 25% · Impact 25% · Design 15% · Presentation 7.5%.</p>
-        <textarea value={raw} onChange={e => setRaw(e.target.value)}
-          placeholder={'# Project Name\nOne-line description\n- feature one\n- feature two'} />
-        <div className="mt-3 flex flex-wrap gap-2">
-          <button className="btn" onClick={prefill}><Ic n="reply" />Prefill from locked idea</button>
-          <button className="btn btn-primary" onClick={gen}><Ic n="mic" />Pre-score + compose prompt</button>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2>Pitchsmith</h2>
+            <p className="mb-0 text-mut">
+              {p
+                ? <>Kit drafted {new Date(p.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} · source: <b className={p.source === 'claude' ? 'text-acc' : 'text-warn'}>{p.source}</b></>
+                : 'Drafts itself as the demo-video gate approaches — or run it now. Paste your README below for sharper output.'}
+            </p>
+          </div>
+          <button className="btn btn-primary" onClick={() => draft(readme)}><Ic n="mic" />{p ? 'Re-draft' : 'Draft now'}</button>
         </div>
+        <textarea className="mt-3 min-h-[90px]" value={readme} onChange={e => setReadme(e.target.value)}
+          placeholder="(optional) paste your README or feature notes — the pitchsmith works from the mission + pick without it" />
       </div>
 
-      {score && (
-        <div className="glass mb-4 p-6">
-          <h2>Local pre-score: {score.total}/100</h2>
-          {Object.entries(score.sub).map(([k, v]) => (
-            <div key={k} className="my-1.5 flex items-center gap-2.5">
-              <div className="w-[170px] text-[13px] text-mut">{k[0].toUpperCase() + k.slice(1)} ({W[k]})</div>
-              <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-white/10">
-                <div className="h-full rounded-full bg-gradient-to-r from-[#22c55e] to-[#4ade80] transition-[width] duration-700" style={{ width: v + '%' }} />
-              </div>
-              <div className="w-9 text-right tabular-nums">{v}</div>
+      {p && (
+        <>
+          <div className="glass mb-4 p-6">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="mb-0">Devpost draft</h2>
+              <button className="btn" onClick={() => copyText(`# ${p.devpost.title}\n> ${p.devpost.tagline}\n\n${p.devpost.description}`, 'Devpost draft')}><Ic n="copy" />Copy</button>
             </div>
-          ))}
-          <p className="mt-3 font-bold">Fix first (free, before Claude sees it):</p>
-          <ul className="ml-5 list-disc text-sm">
-            {score.tips.map(t => <li key={t.cat}><b>{t.cat}:</b> {t.tip}</li>)}
-          </ul>
-        </div>
-      )}
+            <p className="mt-2 text-lg font-bold">{p.devpost.title}</p>
+            <p className="italic text-acc">{p.devpost.tagline}</p>
+            <pre className="mt-2 whitespace-pre-wrap rounded-xl border border-white/10 bg-white/[.03] p-4 font-sans text-[13px] leading-relaxed text-mut">{p.devpost.description}</pre>
+          </div>
 
-      <PromptCard title="Pitch-engineer prompt" prompt={prompt} />
+          <div className="glass mb-4 p-6">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="mb-0">Deck — {p.deck.length} slides</h2>
+              <button className="btn" onClick={() => copyText(deckText, 'Deck outline')}><Ic n="copy" />Copy</button>
+            </div>
+            <div className="mt-2">
+              {p.deck.map((s, i) => (
+                <div key={i} className="mb-2 rounded-xl border border-white/10 bg-white/[.03] px-4 py-3">
+                  <b className="text-acc">{i + 1}. {s.title}</b>
+                  {(s.bullets || []).length > 0 && (
+                    <ul className="ml-5 mt-1.5 list-disc text-[13px] text-mut">
+                      {s.bullets.map((b, j) => <li key={j}>{b}</li>)}
+                    </ul>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="glass mb-4 p-6">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="mb-0">Demo script — 3:00, time-coded</h2>
+              <button className="btn" onClick={() => copyText(scriptText, 'Demo script')}><Ic n="copy" />Copy</button>
+            </div>
+            <table className="mt-2 w-full border-collapse">
+              <tbody>
+                {p.script.map(([t, s], i) => (
+                  <tr key={i}>
+                    <td className="whitespace-nowrap border-b border-white/10 px-2.5 py-2 font-bold text-acc">{t}</td>
+                    <td className="border-b border-white/10 px-2.5 py-2 text-sm">{s}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="glass p-6">
+            <h2>Record the demo. Don't run it live.</h2>
+            <ul>
+              {RECORD_CHECKLIST.map((c, i) => (
+                <li key={i} className="flex items-start gap-2.5 py-1 text-sm">
+                  <Ic n="check" className="mt-0.5 text-acc" /><span>{c}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </>
+      )}
     </>
   )
 }

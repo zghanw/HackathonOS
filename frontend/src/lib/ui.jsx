@@ -66,27 +66,9 @@ export function notify(title, body, urgent) {
   beep(urgent ? 3 : 1);
 }
 
-export function copyText(txt, what = 'Prompt') {
+export function copyText(txt, what = 'Text') {
   navigator.clipboard.writeText(txt).then(
-    () => toast(what + ' copied — paste it into Claude.', 'ok'),
+    () => toast(what + ' copied.', 'ok'),
     () => toast('Clipboard blocked — select the text manually.', 'warn'),
-  );
-}
-
-// shared prompt output card: mono preview + copy — the app's "voice to Claude"
-export function PromptCard({ title, prompt }) {
-  if (!prompt) return null;
-  return (
-    <div className="glass mb-4 p-6">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-        <h2 className="mb-0">{title}</h2>
-        <div className="flex items-center gap-3">
-          <span className="text-xs text-mut tabular-nums">{prompt.length.toLocaleString()} chars</span>
-          <button className="btn btn-primary" onClick={() => copyText(prompt)}><Ic n="copy" />Copy prompt</button>
-        </div>
-      </div>
-      <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded-xl border border-white/10 bg-white/[.03] p-4 text-[12.5px] leading-relaxed text-mut">{prompt}</pre>
-      <p className="mt-2 text-xs text-mut">Paste into Claude Code (or claude.ai) — this prompt carries your full context.</p>
-    </div>
   );
 }

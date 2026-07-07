@@ -1,64 +1,71 @@
-import { useState } from 'react'
-import { SPONSORS, buildIdeaPrompt } from '../lib/core.js'
-import { Ic, toast, PromptCard } from '../lib/ui.jsx'
+import { fmtShort } from '../lib/core.js'
+import { Ic } from '../lib/ui.jsx'
 
-export default function Ideas({ S, update }) {
-  const [tracks, setTracks] = useState([])
-  const [problem, setProblem] = useState('')
-  const [stack, setStack] = useState('React, Tailwind, FastAPI')
-  const [budget, setBudget] = useState(24)
-  const [prompt, setPrompt] = useState('')
-  // lock-your-pick: paste back the winner from Claude's answer
-  const [pick, setPick] = useState({ name: '', wow: '', diff: '' })
+const SCORE_C = f => (f >= 75 ? 'text-ok' : f >= 55 ? 'text-warn' : 'text-bad')
 
-  const toggleTrack = k => setTracks(t => (t.includes(k) ? t.filter(x => x !== k) : [...t, k]))
-  const compose = () => setPrompt(buildIdeaPrompt({ tracks, problem, stack, budgetH: +budget || 24 }))
-  const lock = () => {
-    if (!pick.name.trim()) return toast('Give the idea a name first.', 'warn')
-    const idea = {
-      id: pick.name.trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '') || 'hack-project',
-      name: pick.name.trim(), wow: pick.wow.trim(), diff: pick.diff.trim(),
-    }
-    update({ idea })
-    toast(`Locked: ${idea.name}. It now feeds the Guardian, Kickoff, and Pitch.`, 'ok')
+// the strategist's board: auto-populated on mission launch, one-click override
+export default function Ideas({ S, update, push, rerun }) {
+  const ideas = S.ideas
+
+  if (!S.mission) {
+    return <div className="glass p-6"><h2>Ideas</h2><p className="text-mut">Launch a mission first — the strategist generates and picks ideas automatically.</p></div>
+  }
+
+  const pickIt = i => {
+    update(prev => ({ ideas: { ...prev.ideas, pickIdx: i } }))
+    push('system', 'action', `Pick overridden — building "${ideas.list[i].name}"`)
   }
 
   return (
     <>
       <div className="glass mb-4 p-6">
-        <h2>Idea Brief</h2>
-        <p className="text-mut">Compiles your tracks, theme, stack and time budget into a strategist prompt for Claude — prize-track mapping, brutal feasibility scoring and one-wow MVP scoping baked in. Claude generates; you pick; lock the winner below.</p>
-        <label>Sponsor tracks at this hackathon:</label>
-        <div className="my-2.5 grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-1.5">
-          {Object.entries(SPONSORS).map(([k, s]) => (
-            <label key={k} className="flex items-center gap-1.5 text-[13px] text-ink">
-              <input type="checkbox" checked={tracks.includes(k)} onChange={() => toggleTrack(k)} /> {s.name}
-            </label>
-          ))}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2>Strategist's board</h2>
+            <p className="mb-0 text-mut">
+              {ideas
+                ? <>Generated {new Date(ideas.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} · source: <b className={ideas.source === 'claude' ? 'text-acc' : 'text-warn'}>{ideas.source}</b> · the pick feeds the guardian and pitchsmith. Disagree? Override with one click.</>
+                : 'The strategist is generating ideas…'}
+            </p>
+          </div>
+          <button className="btn" onClick={rerun}><Ic n="sparkles" />Re-run strategist</button>
         </div>
-        <label>Problem statement / theme (optional):</label>
-        <textarea value={problem} onChange={e => setProblem(e.target.value)}
-          placeholder="e.g. 'improve developer security and CI pipelines' — leave blank for an open theme" />
-        <div className="my-3 flex flex-wrap items-center gap-3">
-          <label>Team stack<br /><input value={stack} onChange={e => setStack(e.target.value)} size={28} /></label>
-          <label>Time budget (hours of actual building)<br />
-            <input type="number" value={budget} onChange={e => setBudget(e.target.value)} min={4} max={72} /></label>
-        </div>
-        <button className="btn btn-primary" onClick={compose}><Ic n="sparkles" />Compose idea prompt</button>
       </div>
 
-      <PromptCard title="Strategist prompt" prompt={prompt} />
-
-      <div className="glass p-6">
-        <h2>Lock your pick</h2>
-        <p className="text-mut">When Claude answers, bring the winner back — it feeds the Guardian header, the Build Kickoff prompt, and the Pitch brief.</p>
-        <div className="my-3 grid gap-3 sm:grid-cols-2">
-          <label>Idea name<br /><input className="w-full" value={pick.name} onChange={e => setPick({ ...pick, name: e.target.value })} placeholder="PR Tripwire" /></label>
-          <label>One-wow MVP<br /><input className="w-full" value={pick.wow} onChange={e => setPick({ ...pick, wow: e.target.value })} placeholder="commit a live key → revoked + PR comment in 10s" /></label>
-          <label className="sm:col-span-2">Differentiator<br /><input className="w-full" value={pick.diff} onChange={e => setPick({ ...pick, diff: e.target.value })} placeholder="unlike repo scanners, we guard the merge itself" /></label>
-        </div>
-        <button className="btn" onClick={lock}><Ic n="lock" />Lock this idea</button>
-        {S.idea && <span className="ml-3 text-sm text-mut">currently locked: <b className="text-acc">{S.idea.name}</b></span>}
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(300px,1fr))] gap-3.5">
+        {(ideas?.list || []).map((i, idx) => {
+          const picked = idx === ideas.pickIdx
+          return (
+            <div key={idx} className={`glass p-5 transition hover:-translate-y-[3px] hover:shadow-[0_16px_40px_rgba(0,0,0,.5)] ${picked ? 'border-ok/50' : ''}`}
+              style={picked ? { boxShadow: '0 10px 34px rgba(0,0,0,.45), 0 0 40px rgba(34,197,94,.1)' } : undefined}>
+              <div className={`float-right text-[32px] font-extrabold leading-none ${SCORE_C(i.feasibility)}`}>{i.feasibility}</div>
+              <h3 className="mb-1 flex flex-wrap items-center gap-2 font-bold">
+                {i.name}
+                <span className="rounded-full border border-white/10 px-2 py-0.5 text-[11px] text-mut">{i.label}</span>
+                {picked && <span className="rounded-full border border-ok/50 bg-ok/10 px-2 py-0.5 text-[11px] font-bold text-ok">PICKED</span>}
+              </h3>
+              <p className="italic text-mut">“{i.differentiator}”</p>
+              <p className="my-2 text-sm"><b>Wow MVP:</b> {i.wow}</p>
+              {i.hours && (
+                <p className="text-[13px] text-mut tabular-nums">hours: {i.hours.build ?? '?'} build · {i.hours.integrate ?? '?'} integrate · {i.hours.polish ?? '?'} polish</p>
+              )}
+              {i.diesIf && <p className="text-[13px] text-warn">dies if: {i.diesIf}</p>}
+              <div className="my-2 flex flex-wrap gap-1.5">
+                {(i.sponsors || []).map((s, j) => (
+                  <span key={j} className="inline-flex items-center gap-1 rounded-md border border-white/10 bg-white/[.03] px-2 py-0.5 text-[11px] text-mut">
+                    <Ic n="trophy" s={12} /> <b>{s.name}</b> · {s.api} · {s.prize}
+                  </span>
+                ))}
+              </div>
+              {Array.isArray(i.buildPlan) && i.buildPlan.length > 0 && (
+                <ol className="my-2 ml-5 list-decimal text-[13px] text-mut">
+                  {i.buildPlan.map((p, j) => <li key={j}>{p}</li>)}
+                </ol>
+              )}
+              {!picked && <button className="btn mt-1" onClick={() => pickIt(idx)}><Ic n="check" />Build this instead</button>}
+            </div>
+          )
+        })}
       </div>
     </>
   )
