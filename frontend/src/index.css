@@ -1,88 +1,173 @@
 @import "tailwindcss";
 
 @theme {
-  /* JetBrains Mono everywhere — --font-sans drives Tailwind's default body font */
+  /* JetBrains Mono for body; Press Start 2P reserved for chrome (headings/labels/buttons) —
+     a full page of pixel font is a readability failure, so body copy never uses it */
   --font-sans: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --font-pixel: 'Press Start 2P', 'JetBrains Mono', monospace;
   --color-ok: #4ade80;
-  --color-warn: #fbbf24;
-  --color-bad: #fb7185;
+  --color-warn: #ffb545;
+  --color-bad: #ff6b6b;
   --color-acc: #4ade80;
-  --color-mut: #9aa7bd;
-  --color-ink: #eef2f7;
-  --animate-pulse2: pulse2 1s infinite;
-  --animate-rise: rise 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+  --color-mut: #a89ec4;
+  --color-ink: #eae6f2;
+  --color-panel: #262038;  /* stone slab fill */
+  --color-panel2: #1b1629; /* sunken/inset fill */
+  --color-edge: #0d0a16;   /* darkest pixel border */
+  --color-hi: #4e4270;     /* bevel highlight */
+  --color-lo: #171226;     /* bevel shadow */
+  /* steps() easing: 2-frame pulse and a chunky entry — reads retro, costs less than smooth curves */
+  --animate-pulse2: pulse2 1s steps(2, jump-none) infinite;
+  --animate-rise: rise 0.3s steps(5) both;
 }
 
 @keyframes pulse2 { 50% { opacity: 0.55; } }
-@keyframes rise { from { opacity: 0; transform: translateY(14px) scale(0.985); } to { opacity: 1; transform: none; } }
+@keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 @keyframes flashA { 50% { opacity: 0.3; } }
-@keyframes drift1 { 50% { transform: translate(8vw, 6vw) scale(1.1); } }
-@keyframes drift2 { 50% { transform: translate(-6vw, 7vw) scale(1.08); } }
-@keyframes drift3 { 50% { transform: translate(5vw, -6vw) scale(1.12); } }
 
 @layer base {
-  body { @apply bg-[#060a12] text-ink antialiased overflow-x-hidden; }
-  h2 { @apply text-lg font-bold tracking-tight mb-1.5; }
+  body { @apply bg-[#15121f] text-ink antialiased overflow-x-hidden; }
+  h2 { @apply font-pixel text-[13px] leading-relaxed tracking-wide mb-2; }
   label { @apply text-[13px] text-mut; }
-  input, textarea, select { @apply rounded-xl border border-white/10 bg-white/[.04] px-3 py-2 text-base text-ink; }
-  input:focus, textarea:focus, select:focus { @apply outline-none border-acc ring-[3px] ring-acc/20; }
-  input[type="checkbox"] { accent-color: var(--color-acc); width: 1rem; height: 1rem; }
+  input, textarea, select {
+    @apply rounded-none border-2 border-edge bg-panel2 px-3 py-2 text-base text-ink;
+    box-shadow: inset 2px 2px 0 rgba(0, 0, 0, 0.4);
+  }
+  input:focus, textarea:focus, select:focus { @apply outline-none border-acc; }
+  input::placeholder, textarea::placeholder { @apply text-mut/60; }
   textarea { @apply w-full min-h-[120px] resize-y text-sm; }
+  /* pixel checkbox: sunken square, hard-edged check (inline data URI, zero fetches) */
+  input[type="checkbox"] {
+    appearance: none; -webkit-appearance: none;
+    width: 18px; height: 18px; padding: 0; flex: none; cursor: pointer;
+    background: var(--color-panel2);
+    border: 2px solid var(--color-edge);
+    box-shadow: inset 2px 2px 0 rgba(0, 0, 0, 0.45), inset -2px -2px 0 rgba(255, 255, 255, 0.06);
+  }
+  input[type="checkbox"]:checked {
+    background: var(--color-acc) url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' shape-rendering='crispEdges'><g fill='%23062812'><rect x='1' y='5' width='2' height='2'/><rect x='3' y='7' width='2' height='2'/><rect x='5' y='5' width='2' height='2'/><rect x='7' y='3' width='2' height='2'/><rect x='9' y='1' width='2' height='2'/></g></svg>") center / 12px 12px no-repeat;
+    box-shadow: inset 2px 2px 0 rgba(0, 0, 0, 0.3);
+  }
+  /* pixel radio: same sunken square, solid fill with a dark inner margin when picked */
+  input[type="radio"] {
+    appearance: none; -webkit-appearance: none;
+    width: 16px; height: 16px; padding: 0; flex: none; cursor: pointer;
+    background: var(--color-panel2);
+    border: 2px solid var(--color-edge);
+    box-shadow: inset 2px 2px 0 rgba(0, 0, 0, 0.45);
+  }
+  input[type="radio"]:checked {
+    background: var(--color-acc);
+    box-shadow: inset 0 0 0 3px var(--color-panel2);
+  }
 }
 
 @layer components {
-  .glass {
-    @apply rounded-2xl border border-white/10 bg-white/[.055] backdrop-blur-2xl backdrop-saturate-150;
-    box-shadow: 0 10px 34px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  /* stone panel: chunky pixel bevel via layered 0-blur shadows + hard offset drop. No blur anywhere. */
+  .panel {
+    background: var(--color-panel);
+    border: 3px solid var(--color-edge);
+    box-shadow:
+      inset 0 3px 0 var(--color-hi),
+      inset 3px 0 0 #3a3156,
+      inset -3px 0 0 var(--color-lo),
+      inset 0 -3px 0 var(--color-lo),
+      5px 5px 0 rgba(0, 0, 0, 0.5);
   }
+  /* lighter slab for list items / cards inside panels */
+  .slab {
+    background: var(--color-panel2);
+    border: 2px solid var(--color-edge);
+    box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.05), 3px 3px 0 rgba(0, 0, 0, 0.35);
+  }
+  /* game button: raised bevel; :active shifts 3px + drops the offset shadow = physically pressed.
+     transition: none on purpose — the press must be instant, not eased. */
   .btn {
-    @apply inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/10 px-4 py-2 text-sm transition
-      hover:border-white/20 hover:bg-white/15 active:scale-[.97]
-      focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-acc/35;
+    @apply inline-flex cursor-pointer items-center justify-center gap-2 rounded-none border-2 border-edge px-3.5 py-2 font-pixel text-[9px] uppercase tracking-wide text-ink;
+    background: #352c4e;
+    box-shadow: inset 0 2px 0 var(--color-hi), inset 0 -2px 0 var(--color-lo), 3px 3px 0 rgba(0, 0, 0, 0.45);
+    transition: none;
   }
+  .btn:hover { background: #413a5e; }
+  .btn:active {
+    transform: translate(3px, 3px);
+    box-shadow: inset 0 2px 0 var(--color-hi), inset 0 -2px 0 var(--color-lo);
+  }
+  .btn:focus-visible { @apply outline-2 outline-acc outline-offset-2; }
+  .btn:disabled { opacity: 0.55; cursor: default; }
   .btn-primary {
-    @apply border-0 bg-gradient-to-br from-[#4ade80] to-[#22c55e] font-bold text-[#052912] hover:brightness-105;
-    box-shadow: 0 6px 20px rgba(34, 197, 94, 0.35);
+    background: #2fbf5c;
+    color: #062812;
+    box-shadow: inset 0 2px 0 #7bf0a5, inset 0 -2px 0 #17813a, 3px 3px 0 rgba(0, 0, 0, 0.45);
   }
-  .btn-danger { @apply border-bad/50 text-bad hover:bg-bad/15; }
-  .chip { @apply rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-mut backdrop-blur-md; }
-  .tile-label { @apply mb-2.5 text-[11px] font-semibold uppercase tracking-[1.5px] text-mut; }
+  .btn-primary:hover { background: #3bd26b; }
+  .btn-primary:active { box-shadow: inset 0 2px 0 #7bf0a5, inset 0 -2px 0 #17813a; }
+  .btn-danger { background: #3a1b26; color: var(--color-bad); border-color: #58212f; }
+  .btn-danger:hover { background: #4a2231; }
+  .chip {
+    @apply inline-flex items-center rounded-none border-2 border-edge px-2.5 py-1 font-pixel text-[8px] tracking-wide text-mut;
+    background: var(--color-panel2);
+    box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4);
+  }
+  .tab {
+    @apply cursor-pointer rounded-none border-2 border-transparent px-3.5 py-2.5 font-pixel text-[9px] uppercase tracking-wide text-mut;
+    transition: none;
+  }
+  .tab:hover { @apply bg-white/5 text-ink; }
+  .tab.on {
+    color: var(--color-acc);
+    background: var(--color-panel2);
+    border-color: var(--color-edge);
+    box-shadow: inset 2px 2px 0 rgba(0, 0, 0, 0.5);
+  }
+  .tile-label { @apply mb-3 font-pixel text-[9px] uppercase tracking-wide text-mut; }
   .gate {
-    @apply mr-1.5 inline-block rounded bg-bad px-1.5 text-[9.5px] font-extrabold tracking-wider text-[#2b0810] align-[1px];
+    @apply mr-1.5 inline-block rounded-none bg-bad px-1 py-0.5 font-pixel text-[7px] tracking-wider text-[#2b0810] align-[2px];
+  }
+  /* segmented HP/XP bar: static tick overlay, width set inline per render — no width transition */
+  .pixbar {
+    position: relative; height: 14px;
+    background: var(--color-panel2);
+    border: 2px solid var(--color-edge);
+    box-shadow: inset 2px 2px 0 rgba(0, 0, 0, 0.4);
+  }
+  .pixbar > i {
+    display: block; height: 100%;
+    background: var(--pixbar-c, #2fbf5c);
+    box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.35), inset 0 -2px 0 rgba(0, 0, 0, 0.3);
+  }
+  .pixbar::after {
+    content: ''; position: absolute; inset: 0; pointer-events: none;
+    background-image: repeating-linear-gradient(90deg, transparent 0 7px, rgba(0, 0, 0, 0.3) 7px 9px);
   }
 }
 
-/* --- ambient glass backdrop: glass needs something vibrant to blur against --- */
-#bg { position: fixed; inset: 0; z-index: -1; overflow: hidden;
-  background: radial-gradient(120% 90% at 50% -10%, #0d1830 0%, #070c16 55%, #05070d 100%); }
-#bg span { position: absolute; border-radius: 50%; filter: blur(72px); }
-#bg span:nth-child(1) { width: 52vw; height: 52vw; left: -10vw; top: -12vw; background: rgba(34, 197, 94, 0.2); animation: drift1 24s ease-in-out infinite; }
-#bg span:nth-child(2) { width: 46vw; height: 46vw; right: -12vw; top: 8vw; background: rgba(56, 189, 248, 0.16); animation: drift2 30s ease-in-out infinite; }
-#bg span:nth-child(3) { width: 40vw; height: 40vw; left: 24vw; bottom: -18vw; background: rgba(139, 92, 246, 0.15); animation: drift3 28s ease-in-out infinite; }
-
-/* completion ring (conic gradient driven by --p) */
-.ring { --p: 0; position: relative; width: 82px; height: 82px; border-radius: 50%; flex: none;
-  background: conic-gradient(var(--color-acc) calc(var(--p) * 1%), rgba(255, 255, 255, 0.09) 0);
-  display: grid; place-items: center; transition: background 0.6s ease; }
-.ring::before { content: ''; position: absolute; width: 60px; height: 60px; border-radius: 50%; background: rgba(8, 12, 20, 0.72); }
-.ring b { position: relative; font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
+/* --- ambient backdrop: static dither + vignette. One paint, zero animation, zero blur. --- */
+#bg {
+  position: fixed; inset: 0; z-index: -1;
+  background:
+    radial-gradient(120% 100% at 50% 0%, rgba(96, 74, 150, 0.16), transparent 60%),
+    radial-gradient(rgba(255, 255, 255, 0.028) 1px, transparent 1px) 0 0 / 4px 4px,
+    #15121f;
+}
 
 /* imperative alarm surfaces (created via DOM in ui.jsx — alarms are side effects) */
 #flash { position: fixed; inset: 0; pointer-events: none; background: var(--color-bad); opacity: 0; z-index: 50; }
 #flash.on { animation: flashA 0.4s 6; }
 #toasts { position: fixed; right: 16px; bottom: 16px; z-index: 60; display: flex; flex-direction: column; gap: 8px; max-width: 360px; }
-.toast { background: rgba(255, 255, 255, 0.055); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
-  border: 1px solid rgba(255, 255, 255, 0.11); border-left: 4px solid var(--color-acc); border-radius: 12px;
-  padding: 11px 15px; font-size: 13px; box-shadow: 0 12px 34px rgba(0, 0, 0, 0.55); animation: rise 0.3s ease both; }
+.toast {
+  background: var(--color-panel);
+  border: 2px solid var(--color-edge);
+  border-left: 4px solid var(--color-acc);
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.06), 3px 3px 0 rgba(0, 0, 0, 0.45);
+  padding: 11px 15px; font-size: 13px;
+  animation: rise 0.25s steps(4) both;
+}
 .toast.warn { border-left-color: var(--color-warn); }
 .toast.bad { border-left-color: var(--color-bad); }
 
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .glass, .toast, header { background: #111827; }
-}
-
 @media (prefers-reduced-motion: reduce) {
-  #bg span, .animate-rise, .toast { animation: none !important; }
+  .animate-rise, .toast { animation: none !important; }
   .animate-pulse2 { animation: none !important; }
   #flash.on { animation: flashA 0.4s 2 !important; }
 }

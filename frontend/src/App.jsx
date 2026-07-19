@@ -1,57 +1,62 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { paceState, fmtDur, fmtShort, remindEvery } from './lib/core.js'
-import { runScout, runStrategist, runGuardian, runPitch } from './lib/agents.js'
-import { Ic, notify, flash, audioInit } from './lib/ui.jsx'
-import Mission from './modules/Mission.jsx'
-import Ideas from './modules/Ideas.jsx'
-import Pitch from './modules/Pitch.jsx'
-import Settings from './modules/Settings.jsx'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { paceState, fmtDur, fmtShort, fmtAgo, remindEvery } from './lib/core.js'
+import { useTeam } from './lib/team.js'
+import { Ic, notify, flash, audioInit, copyText } from './lib/ui.jsx'
+import Join from './modules/Join.jsx'
+import Guardian from './modules/Guardian.jsx'
+import Tasks from './modules/Tasks.jsx'
+import Notes from './modules/Notes.jsx'
+import Files from './modules/Files.jsx'
 
-const KEY = 'hackos-v2'
-const loadLocal = () => { try { return JSON.parse(localStorage.getItem(KEY) || '{}') } catch { return {} } }
+// motif renames are UI labels only — ids/routes/behavior unchanged
+const TABS = [['guardian', 'Boss Timer'], ['tasks', 'Quests'], ['notes', 'Tome'], ['files', 'Chest']]
+const MINI_C = { ok: 'text-ok !border-ok/60', behind: 'text-warn !border-warn/60', danger: 'text-bad !border-bad animate-pulse2' }
 
-// shared state — localStorage only. ponytail: serverless on purpose; the agents call
-// the Anthropic API straight from the browser, so there is nothing to host.
-function useHackState() {
-  const [S, setS] = useState(loadLocal)
-  const update = useCallback(patch => setS(prev => {
-    const p = typeof patch === 'function' ? patch(prev) : patch
-    const next = { ...prev, ...p, updatedAt: Date.now() }
-    localStorage.setItem(KEY, JSON.stringify(next))
-    return next
-  }), [])
-  return [S, update]
+// connected = presence channel; idle flag = member row (postgres_changes)
+export const liveState = (presence, m) =>
+  presence[m.id] ? (m.idle ? 'idle' : 'online') : 'offline'
+
+// party-member portrait: square pixel frame, border color = liveness
+export function Avatar({ m, live, size = 30 }) {
+  const edge = live === 'online' ? 'border-ok' : live === 'idle' ? 'border-warn' : 'border-white/20'
+  return (
+    <span title={`${m.name}${m.status_text ? ': ' + m.status_text : ''} (${live}, ${fmtAgo(m.last_active)})`}
+      className={`grid shrink-0 place-items-center border-2 font-bold uppercase shadow-[2px_2px_0_rgba(0,0,0,.45)] ${edge} ${live === 'offline' ? 'opacity-40' : ''}`}
+      style={{ width: size, height: size, background: m.color + '2e', color: m.color, fontSize: size * 0.38 }}>
+      {m.name.slice(0, 2)}
+    </span>
+  )
 }
 
-const TABS = [
-  ['mission', 'Mission Control'],
-  ['ideas', 'Ideas'],
-  ['pitch', 'Pitch'],
-  ['settings', 'Settings'],
-]
-const MINI_C = { ok: 'text-ok border-ok/50', behind: 'text-warn border-warn/50', danger: 'text-bad border-bad animate-pulse2' }
-const PACE_RANK = { ok: 0, behind: 1, danger: 2 }
+// my "what I'm doing right now" line — Figma-cursor-label for the whole team
+function StatusInput({ me, api }) {
+  const [txt, setTxt] = useState(me?.status_text || '')
+  const t = useRef(null)
+  useEffect(() => { setTxt(me?.status_text || '') }, [me?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+  const onChange = v => {
+    setTxt(v)
+    clearTimeout(t.current)
+    t.current = setTimeout(() => api.setStatus(v.trim()), 600)
+  }
+  return (
+    <input value={txt} onChange={e => onChange(e.target.value)} maxLength={80}
+      placeholder="what are you doing right now?"
+      className="w-60 !py-1.5 !text-[13px]" />
+  )
+}
 
 export default function App() {
-  const [S, update] = useHackState()
-  const [tab, setTab] = useState('mission')
+  const T = useTeam()
+  const { team, members, milestones: mRows, tasks, note, presence, myId, api } = T
+  const [tab, setTab] = useState('guardian')
   const [now, setNow] = useState(Date.now())
-  const book = useRef({})            // per-milestone alarm bookkeeping — reset on reload is fine
-  const paceRef = useRef('ok')       // last seen pace, for worsening detection
-  const guardianLast = useRef(0)     // guardian cooldown
-  const pitchAuto = useRef(false)    // pitchsmith fires once per mission
-  const sRef = useRef(S)
-  sRef.current = S
+  const book = useRef({}) // per-milestone alarm bookkeeping — reset on reload is fine
 
-  const push = useCallback((agent, kind, title, body = '') => update(prev => ({
-    feed: [{ id: Date.now() + Math.random(), at: Date.now(), agent, kind, title, body }, ...(prev.feed || [])].slice(0, 50),
-  })), [update])
-
-  // agent context: always reads the latest state, never a stale closure
-  const ctx = useMemo(() => ({ latest: () => sRef.current, update, push }), [update, push])
-
-  const mission = S.mission
-  const auto = S.settings?.auto !== false
+  // shared truth: milestone rows straight from the DB, sorted by time
+  const milestones = useMemo(() =>
+    mRows.map(r => ({ ...r, at: Number(r.at), done: !!r.done_by, doneBy: r.done_by }))
+      .sort((a, b) => a.at - b.at),
+  [mRows])
 
   useEffect(() => {
     const h = () => audioInit()
@@ -60,31 +65,34 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    if (!mission) return
+    if (!team) return
     const t = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(t)
-  }, [!!mission]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [!!team]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ---- the OS loop: alarms + self-triggering agents, alive on every tab ----
+  // ---- the guardian loop: escalating alarms on every teammate's machine ----
   useEffect(() => {
-    if (!mission) { document.title = 'Hackathon OS'; return }
-    const left = mission.end - now
-    const pace = paceState(mission.milestones, now)
-    document.title = (pace !== 'ok' && Math.floor(now / 1000) % 2 ? '● ' : '') + (left > 0 ? fmtDur(left) : 'CLOSED') + ' — Hackathon OS'
+    if (!team) { document.title = 'Hackathon OS'; return }
+    const left = Number(team.ends_at) - now
+    const pace = paceState(milestones, now)
+    document.title = (pace !== 'ok' && Math.floor(now / 1000) % 2 ? '● ' : '') + (left > 0 ? fmtDur(left) : 'CLOSED') + ' · Hackathon OS'
 
-    // escalating alarms (deterministic, always on)
-    for (const m of mission.milestones) {
-      if (m.done) continue
-      const b = book.current[m.id] || (book.current[m.id] = {})
+    // deleted gates lose their alarm state; a time-edited gate re-arms (b.at mismatch)
+    const ids = new Set(milestones.map(m => m.id))
+    for (const k of Object.keys(book.current)) if (k !== 'ended' && !ids.has(k)) delete book.current[k]
+    for (const m of milestones) {
+      if (m.done) { delete book.current[m.id]; continue }
+      let b = book.current[m.id]
+      if (!b || b.at !== m.at) b = book.current[m.id] = { at: m.at }
       if (!b.warned && m.at > now && m.at - now <= 15 * 60e3) {
         b.warned = 1
-        notify(`Up next (T-${fmtShort(mission.end - m.at)})`, `${m.label} — due in ${fmtShort(m.at - now)}`, m.hard)
+        notify(`Up next (T-${fmtShort(Number(team.ends_at) - m.at)})`, `${m.label}, due in ${fmtShort(m.at - now)}`, m.hard)
       }
       if (m.at <= now && left > -36e5) {
         const cad = remindEvery(left)
         if (now - (b.lastN || 0) >= cad) {
           b.lastN = now
-          notify(m.hard ? 'HARD GATE MISSED' : 'Overdue', `${m.label} — check it off or cut scope.`, m.hard)
+          notify(m.hard ? 'HARD GATE MISSED' : 'Overdue', `${m.label}. Check it off or cut scope.`, m.hard)
           if (m.hard) flash()
         }
       }
@@ -94,80 +102,76 @@ export default function App() {
       notify('WINDOW CLOSED', 'Submission window is over.', true)
       flash()
     }
+  }, [now, team, milestones])
 
-    // guardian agent: auto-triage when pace worsens (20min cooldown)
-    if (pace !== paceRef.current) {
-      if (PACE_RANK[pace] > PACE_RANK[paceRef.current] && auto && left > 0 && now - guardianLast.current > 20 * 60e3) {
-        guardianLast.current = now
-        runGuardian(ctx, pace)
-      }
-      paceRef.current = pace
-    }
-
-    // pitchsmith agent: auto-draft the kit as the video/devpost gate approaches
-    if (auto && !pitchAuto.current && !S.pitch && left > 0) {
-      const gate = mission.milestones.find(x => !x.done && /Demo video|Devpost draft|Submission form/.test(x.label))
-      if (gate && gate.at - now <= 15 * 60e3) {
-        pitchAuto.current = true
-        runPitch(ctx, '', true)
-      }
-    }
-  }, [now, mission]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  const left = mission ? mission.end - now : 0
-  const pace = mission ? paceState(mission.milestones, now) : 'ok'
-  const pick = S.ideas?.list?.[S.ideas.pickIdx]
-
-  const launchMission = m => {
-    book.current = {}; paceRef.current = 'ok'; pitchAuto.current = false
-    update({ mission: m, ideas: undefined, pitch: undefined, intel: undefined, feed: [] })
-    push('system', 'info', `Mission launched — ${fmtShort(m.end - m.start)} window, ${m.milestones.length} gates (${m.milestones.filter(x => x.hard).length} hard)`,
-      'Scout studies the sponsors, then the strategist picks. You do two things: build, and check off gates.')
-    // scout first, then strategist with the fresh intel (passed explicitly — state may not have committed yet)
-    runScout(ctx, m).then(intel => runStrategist(ctx, m, intel))
+  if (!T.ready) {
+    return <div className="grid min-h-screen place-items-center text-mut">connecting…</div>
   }
-  const endMission = () => {
-    if (!confirm('End this mission? All mission state will be cleared.')) return
-    update({ mission: undefined, ideas: undefined, pitch: undefined, intel: undefined, feed: [] })
-    document.title = 'Hackathon OS'
+  if (!team) {
+    return (
+      <>
+        <div id="bg" aria-hidden="true" />
+        <Join onDone={T.setSess} />
+        <div id="flash" /><div id="toasts" />
+      </>
+    )
   }
+
+  const left = Number(team.ends_at) - now
+  const pace = paceState(milestones, now)
+  const me = members.find(m => m.id === myId)
+  const invite = () => copyText(
+    `Join our Hackathon OS team space. Code: ${team.code}\n${location.origin}${location.pathname}`,
+    'Invite (code ' + team.code + ')')
 
   return (
     <>
-      <div id="bg" aria-hidden="true"><span /><span /><span /></div>
+      <div id="bg" aria-hidden="true" />
 
-      <header className="sticky top-0 z-20 flex flex-wrap items-center gap-3.5 border-b border-white/10 bg-white/[.055] px-5 py-3 backdrop-blur-2xl backdrop-saturate-150">
-        <div className="flex items-center gap-2.5 font-extrabold leading-tight tracking-wide">
+      <header className="sticky top-0 z-20 flex flex-wrap items-center gap-3 border-b-[3px] border-edge bg-[#1c1730] px-5 py-3 shadow-[0_3px_0_rgba(0,0,0,.4)]">
+        <div className="flex items-center gap-2.5 leading-tight">
           <Ic n="clock" s={20} className="text-acc" />
           <span>
-            <span className="bg-gradient-to-r from-white via-[#4ade80] to-[#38bdf8] bg-clip-text text-transparent">HACKATHON OS</span>
-            <small className="block text-[11px] font-normal tracking-normal text-mut">agentic mission control</small>
+            <span className="font-pixel text-[12px] text-acc">HACKATHON OS</span>
+            <small className="block text-[11px] tracking-normal text-mut">{team.name || 'team space'}</small>
           </span>
         </div>
-        <span className="chip">{pick ? <>building: <b className="text-acc">{pick.name}</b></> : 'no pick yet'}</span>
-        {mission && (
-          <button className={`chip cursor-pointer tabular-nums ${MINI_C[pace]}`} onClick={() => setTab('mission')}>
-            {left > 0 ? fmtDur(left) : 'CLOSED'}
-          </button>
-        )}
-        <nav className="ml-auto flex flex-wrap gap-0.5">
+        <button className="chip cursor-pointer hover:text-ink" onClick={invite} title="Copy invite code + link">
+          <Ic n="copy" s={11} className="mr-1.5 inline align-[-1px]" />code <b className="ml-1 text-acc tracking-widest">{team.code}</b>
+        </button>
+        <button className={`chip cursor-pointer tabular-nums ${MINI_C[pace]}`} onClick={() => setTab('guardian')}>
+          {left > 0 ? fmtDur(left) : 'CLOSED'}
+        </button>
+        <span className="flex items-center gap-1">
+          {members.map(m => <Avatar key={m.id} m={m} live={liveState(presence, m)} size={28} />)}
+        </span>
+        <StatusInput me={me} api={api} />
+        <nav className="ml-auto flex flex-wrap items-center gap-1">
           {TABS.map(([id, label]) => (
-            <button key={id}
-              className={`cursor-pointer rounded-xl px-4 py-2 text-sm transition ${tab === id ? 'bg-acc font-semibold text-[#062812]' : 'text-mut hover:bg-white/10 hover:text-ink'}`}
-              onClick={() => setTab(id)}>
+            <button key={id} className={`tab ${tab === id ? 'on' : ''}`} onClick={() => setTab(id)}>
               {label}
             </button>
           ))}
+          <button className="btn ml-1 !px-2.5 !py-2" title="Leave team space (your check-offs stay)"
+            onClick={() => confirm('Leave this team space on this device?') && api.leave()}>
+            <Ic n="logout" s={14} />
+          </button>
         </nav>
       </header>
 
       <main className="mx-auto max-w-[1080px] px-5 pb-24 pt-6">
-        <div className={tab === 'mission' ? '' : 'hidden'}>
-          <Mission S={S} update={update} now={now} onLaunch={launchMission} onEnd={endMission} />
+        <div className={tab === 'guardian' ? '' : 'hidden'}>
+          <Guardian team={team} members={members} milestones={milestones} presence={presence} now={now} myId={myId} api={api} onInvite={invite} />
         </div>
-        <div className={tab === 'ideas' ? '' : 'hidden'}><Ideas S={S} update={update} push={push} rerun={() => runStrategist(ctx)} /></div>
-        <div className={tab === 'pitch' ? '' : 'hidden'}><Pitch S={S} draft={readme => runPitch(ctx, readme, false)} /></div>
-        <div className={tab === 'settings' ? '' : 'hidden'}><Settings S={S} update={update} /></div>
+        <div className={tab === 'tasks' ? '' : 'hidden'}>
+          <Tasks tasks={tasks} members={members} presence={presence} myId={myId} api={api} />
+        </div>
+        <div className={tab === 'notes' ? '' : 'hidden'}>
+          <Notes note={note} members={members} presence={presence} myId={myId} api={api} active={tab === 'notes'} />
+        </div>
+        <div className={tab === 'files' ? '' : 'hidden'}>
+          <Files teamId={team.id} filesVersion={T.filesVersion} api={api} />
+        </div>
       </main>
 
       <div id="flash" />

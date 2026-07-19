@@ -1,23 +1,61 @@
 # Hackathon OS
 
-Agentic mission control for competitive hackathoners. **You do two things: describe the hackathon once, and check off gates as they happen. Agents do everything else, unprompted.**
+**A real-time collaboration space for hackathon teams — the one screen your whole team keeps open on a second monitor for the entire event.**
 
-Serverless: React 18 + Tailwind CSS v4 (Vite) static site. Agents call the Anthropic API **directly from the browser** — no backend, no proxy. State lives in localStorage.
+Notion, Trello, and Slack treat time as metadata: a due date on a card, a reminder in a thread. A hackathon is a fixed window with hard gates — miss the submission deadline and nothing else you built matters. Hackathon OS makes the countdown the surface itself: every teammate's live status (who's online, who's stuck, on what, *right now*) renders against the same shared clock and the same hard submission gates. Presence and deadlines are one feature, not two tabs.
 
-## The agents
+## What it does
 
-| Agent | Fires itself when | Does |
-|---|---|---|
-| **Scout** | Mission launch (first) | Studies the sponsors you typed — any company, free text — and briefs the team: integratable APIs, likely prize track, winning angle. Feeds every other agent. |
-| **Strategist** | Mission launch (after the scout) | Generates 5 scored ideas (prize-track mapping from the scout's intel, feasibility labels incl. "Trap", hour splits, "dies if" risk, build plan) and **auto-picks the winner**. Override with one click. |
-| **Guardian** | Pace drops to behind/danger (20-min cooldown) | Doesn't just alarm — produces a triage plan: what to CUT, what to KEEP, the single next action. Posted to the agent console. |
-| **Pitchsmith** | T-15min before the demo-video/Devpost gate | Drafts the full submission kit: Devpost title+tagline+description, 7-slide deck, 3:00 time-coded script. Waiting in the Pitch tab before you'd think to ask. |
+- **Team space** — create a space once, teammates join with a 6-character code. One shared mission (name, theme, tracks, stack, window) per team, not per browser.
+- **Presence** — live avatars with online / idle / offline state, a free-text *"what I'm doing right now"* line per teammate (Figma-cursor-label style), and last-active timestamps. Realtime, not polled.
+- **Shared Deadline Guardian** — the live countdown, the deterministic hard-gate milestone engine, and escalating alarms (notification + audio + title flash + screen flash) on *every teammate's machine*. Check off a gate and everyone's screen updates live, with attribution ("✓ Ben").
+- **Task board** — todo / doing / done, assign to teammates, syncs live.
+- **Team notes** — one shared scratchpad, last-write-wins with a live *"X is editing…"* indicator so collisions are visible before they happen.
+- **Shared files** — upload/list/download small files (≤10 MB) per team: deck drafts, design assets, the backup demo GIF.
 
-Deterministic and always-on (no API needed): the countdown, hard gates, pace engine, escalating alarms (notification + audio + title flash + screen flash), and the recording checklist.
+## Pixel skin (v2 look)
 
-**No API key?** Every agent degrades to a deterministic fallback engine — less smart, never dead. Add a key in Settings to go generative (stored in localStorage only; use a scoped key).
+The glassmorphism SaaS look is gone; the app now reads as a 16-bit game the team plays together — Guardian is the **Boss Timer**, Tasks the **Quest Board**, Notes the **Tome**, Files the **Chest**. Visual layer only: engine, data layer, realtime wiring, and every behavior are byte-identical.
 
-## Run
+- **Panels**: chunky pixel bevels via layered 0-blur `box-shadow` + hard offset drop shadows. `backdrop-filter` removed entirely (it was real GPU cost), along with the three infinitely-animating blurred background blobs — the backdrop is now a static dither + vignette, painted once.
+- **Type**: Press Start 2P for chrome only (headings, labels, buttons, the countdown digits); body copy stays JetBrains Mono — a full page of pixel font is a readability failure.
+- **Motion**: `steps()` easing everywhere it animates; buttons press 2–3px down-right on `:active` in pure CSS; the continuous-animation budget is two small pulsing chips in danger state, opacity-only. The countdown tick is a plain text update, the timer bar has no width transition. `prefers-reduced-motion` honored as strictly as before.
+- **Icons**: same inline SVGs, de-rounded with square caps + miter joins. Zero new asset fetches (one extra Google-Fonts family on the existing link).
+- **Measured, not asserted** (rAF frame sampling, 1440×900): glass build idle — avg 7.5 ms/frame, worst 66.6 ms; pixel build *while* switching all four tabs and toggling gates — avg 6.1 ms, worst 36.1 ms, one frame >25 ms in 6 s. Before/after in [docs/](docs/).
+- **Copy style**: no em-dashes in UI copy, ever. Rendered strings use periods, commas, or colons (middots for metadata separators are fine).
+
+## Architecture
+
+React 18 + Tailwind v4 (Vite) static frontend, **Supabase** backend — Postgres + Realtime + Storage, no server code to host.
+
+```
+frontend/src/
+├── lib/core.js       deterministic spine: milestone engine, pace state, alarm cadence.
+│                     Pure + node-testable. Same team window ⇒ identical milestones on
+│                     every machine, so the backend only syncs WHICH gates are checked.
+├── lib/supabase.js   client init from .env
+├── lib/team.js       the data layer: one hook owns the session, shared state, and all
+│                     realtime subscriptions; components get plain state + mutations
+├── lib/ui.jsx        SVG icons, alarm/toast utils
+├── App.jsx           shell: header (code, countdown, avatars, status line), guardian
+│                     alarm loop, tab routing
+└── modules/          Join / Guardian / Tasks / Notes / Files
+supabase/migrations/  full schema — apply to any Supabase project to rehost
+```
+
+**Sync design** (all tables prefixed `hackos_`):
+
+| Surface | Mechanism |
+|---|---|
+| Milestones (label/time/hard + check-offs), tasks, notes, statuses, idle/editing flags | `postgres_changes` on `hackos_*` tables, filtered per team |
+| Online/offline | Realtime presence channel — join/leave only (presence *meta updates* proved unreliable in testing, so mutable flags live on the member row instead) |
+| File list changes; gate-removal attribution | Realtime broadcast on the team channel (RLS strips DELETE payloads to the pk, so "who removed it" can't ride the DB event) |
+
+The timeline is fully team-managed: any member adds, edits (label, T-minus time, HARD flag), or removes gates inline in the quest log, with an undo toast on delete and attribution toasts on remote changes. `core.js`'s `genMilestones` survives as the optional "Classic plan (11 gates)" seed at team creation.
+
+Identity is deliberately lightweight: no accounts. Joining creates a member row; the session (team + member id) lives in localStorage. Append `?fresh` to the URL to act as a second teammate in another tab of the same browser (handy for demos).
+
+## Run it
 
 ```sh
 cd frontend
@@ -25,24 +63,32 @@ npm install
 npm run dev        # http://localhost:5173
 ```
 
-Deploy: `vercel` from the repo root. Self-test: `node frontend/src/lib/core.js` → PASS.
+Self-test the engine: `node frontend/src/lib/core.js` → PASS.
 
-## Structure
+### Supabase setup
+
+`frontend/.env` (gitignored) needs two values — both are publishable-by-design, safe in a client bundle:
 
 ```
-frontend/src/
-├── lib/core.js       deterministic spine: gates, pace, alarms cadence + agent fallbacks (node-testable)
-├── lib/agents.js     Anthropic API client + strategist / guardian / pitchsmith
-├── lib/ui.jsx        SVG icons, alarm utils
-├── App.jsx           the OS loop: state, alarms, agent auto-triggers, feed
-└── modules/          Mission (bento + agent console) / Ideas / Pitch / Settings
+VITE_SUPABASE_URL=https://YOUR-PROJECT-REF.supabase.co
+VITE_SUPABASE_ANON_KEY=sb_publishable_...
 ```
 
-## Design decisions (noted inline with `ponytail:` comments)
+The backend is the standalone **`HackathonOS`** Supabase project (free tier, `ap-southeast-1`). To rehost anywhere: create a project, run [supabase/migrations/001_hackos_team_space.sql](supabase/migrations/001_hackos_team_space.sql) in the SQL editor, and swap the two `.env` values. Nothing else changes.
 
-- **Milestone check-offs stay manual on purpose** — the OS automates everything except the truth about what's actually built.
-- **Direct browser→API calls** (`anthropic-dangerous-direct-browser-access`) — the key never leaves your machine; there's no server to protect.
-- **Agents are stateless functions over mission state** — every action lands in the feed, nothing happens invisibly.
-- Autonomy is one toggle in Settings; off = agents only run on their buttons.
+Deploy: `vercel` from the repo root; set the two `VITE_*` env vars in Vercel project settings.
 
-Non-goals (on purpose): team matchmaking, organizer dashboard, mobile app, multi-user collab, API marketplace.
+### Security model (deliberate v1 tradeoff)
+
+RLS is enabled but permissive: the join code is the only secret, and anyone with the publishable key could technically read/write `hackos_*` rows. That's an accepted tradeoff for a weekend tool holding weekend-lived data — the upgrade path is Supabase Auth + membership-scoped policies, and the migration file marks the spot.
+
+## What was removed, and why
+
+The previous version was a single-player AI copilot. This version is a multiplayer team surface — the AI layer went away entirely:
+
+- **`lib/agents.js`** (Scout, Strategist, Guardian's AI triage, Pitchsmith, `callClaude`) — all four agents, the browser-side Anthropic API client, and every call site.
+- **Settings tab** — existed only for API key management.
+- **Ideas & Pitch tabs** — AI-generation surfaces (idea scoring, submission-kit drafting). Kept from Pitch's scaffolding: the **recording checklist** and **judging-rubric weights**, now a static reference tile at the bottom of the Guardian tab — they're genuinely useful and needed no AI.
+- **`core.js` fallback bank** (`SPONSORS`, `IDEA_BANK`, `fallback*`, `extractJson`) — these were the AI layer's offline shadow, not the engine. The engine (milestones / pace / reminders / formatters) is untouched and still self-tested.
+
+Non-goals, still: organizer views across teams, video/voice, native apps, public team discovery, CRDT-grade collaborative editing.

@@ -19,12 +19,23 @@ const PATHS = {
   check: '<polyline points="20 6 9 17 4 12"/>',
   terminal: '<polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>',
   sparkles: '<path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/>',
+  users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+  plus: '<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>',
+  trash: '<polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
+  file: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>',
+  upload: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>',
+  logout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>',
+  pencil: '<path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>',
+  chevL: '<polyline points="15 18 9 12 15 6"/>',
+  chevR: '<polyline points="9 18 15 12 9 6"/>',
 };
 
+// square caps + miter joins de-round the line icons into angular pixel-era chrome
+// (shape-rendering: crispEdges was tried and rejected — it shreds the curves)
 export function Ic({ n, s = 16, className = '' }) {
   return (
     <svg className={'shrink-0 ' + className} width={s} height={s} viewBox="0 0 24 24" fill="none"
-      stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+      stroke="currentColor" strokeWidth="2.25" strokeLinecap="square" strokeLinejoin="miter"
       aria-hidden="true" dangerouslySetInnerHTML={{ __html: PATHS[n] || '' }} />
   );
 }
@@ -51,24 +62,32 @@ export function flash() {
   if (!f) return;
   f.classList.remove('on'); void f.offsetWidth; f.classList.add('on');
 }
-export function toast(msg, type = 'ok') {
+// action: optional { label, fn } renders a pixel button in the toast (used for undo)
+export function toast(msg, type = 'ok', action = null) {
   const c = document.getElementById('toasts');
   if (!c) return;
   const d = document.createElement('div');
   d.className = 'toast ' + type;
   d.textContent = msg;
+  if (action) {
+    const b = document.createElement('button');
+    b.className = 'btn !ml-3 !px-2 !py-1';
+    b.textContent = action.label;
+    b.onclick = () => { action.fn(); d.remove(); };
+    d.appendChild(b);
+  }
   c.appendChild(d);
   setTimeout(() => d.remove(), 7000);
 }
 export function notify(title, body, urgent) {
   try { if (window.Notification && Notification.permission === 'granted') new Notification(title, { body }); } catch { /* denied */ }
-  toast(title + ' — ' + body, urgent ? 'bad' : 'warn');
+  toast(title + ': ' + body, urgent ? 'bad' : 'warn');
   beep(urgent ? 3 : 1);
 }
 
 export function copyText(txt, what = 'Text') {
   navigator.clipboard.writeText(txt).then(
     () => toast(what + ' copied.', 'ok'),
-    () => toast('Clipboard blocked — select the text manually.', 'warn'),
+    () => toast('Clipboard blocked. Select the text manually.', 'warn'),
   );
 }
