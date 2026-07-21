@@ -51,7 +51,7 @@ export default function Join({ onDone }) {
   const [name, setName] = useState('')
   const [theme, setTheme] = useState('')
   const [tracks, setTracks] = useState([])
-  const [stack, setStack] = useState('React, Tailwind, Supabase')
+  const [stack, setStack] = useState('')
   const [start, setStart] = useState(() => toLocal(new Date()))
   const [end, setEnd] = useState(() => toLocal(new Date(Date.now() + 24 * 36e5)))
   const [reqs, setReqs] = useState({ devpost: true, video: true, repo: true })
@@ -99,7 +99,7 @@ export default function Join({ onDone }) {
       <div className="mx-auto mb-6 max-w-md">
         <div className="panel p-5">
           <label>Your name (what your party sees)<br />
-            <input className="w-full" value={userName} onChange={e => setUserName(e.target.value)} placeholder="e.g. Hao Wen" maxLength={24} />
+            <input className="w-full" value={userName} onChange={e => setUserName(e.target.value)} placeholder="e.g. Jalen" maxLength={24} />
           </label>
         </div>
       </div>
@@ -122,8 +122,8 @@ export default function Join({ onDone }) {
           <h2><Ic n="zap" s={15} className="mr-2 inline align-[-2px] text-acc" />Start a new run</h2>
           <p className="text-mut">Set up the mission once for the whole party. Everyone else just joins with the code.</p>
           <div className="my-3 grid gap-3 sm:grid-cols-2">
-            <label>Hackathon name<br /><input className="w-full" value={name} onChange={e => setName(e.target.value)} placeholder="ImagineHack 2026" /></label>
-            <label>Team stack<br /><input className="w-full" value={stack} onChange={e => setStack(e.target.value)} /></label>
+            <label>Hackathon name<br /><input className="w-full" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. 'MyHack'" /></label>
+            <label>Team stack<br /><input className="w-full" value={stack} onChange={e => setStack(e.target.value)} placeholder="e.g. 'Vue, FastAPI'" /></label>
           </div>
           <label>Theme / problem statement (optional):</label>
           <textarea className="min-h-[60px]" value={theme} onChange={e => setTheme(e.target.value)}
