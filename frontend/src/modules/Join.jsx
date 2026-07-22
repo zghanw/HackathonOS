@@ -40,7 +40,7 @@ const toLocal = d => {
   const p = n => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`
 }
-const REQS = [['devpost', 'Devpost link'], ['video', 'Demo video'], ['repo', 'Public repo']]
+const REQS = [['devpost', 'Devpost link'], ['video', 'Demo video'], ['repo', 'Public repo'], ['slides', 'Presentation slides'], ['report', 'Report']]
 
 export default function Join({ onDone }) {
   const [userName, setUserName] = useState('')
@@ -54,8 +54,8 @@ export default function Join({ onDone }) {
   const [stack, setStack] = useState('')
   const [start, setStart] = useState(() => toLocal(new Date()))
   const [end, setEnd] = useState(() => toLocal(new Date(Date.now() + 24 * 36e5)))
-  const [reqs, setReqs] = useState({ devpost: true, video: true, repo: true })
-  const [plan, setPlan] = useState('classic') // starting preset; everything is editable after creation
+  const [reqs, setReqs] = useState({ devpost: false, video: true, repo: true , slides: false, report: false})
+  const [plan, setPlan] = useState('empty') // starting preset; everything is editable after creation
   const preset = h => setEnd(toLocal(new Date(+new Date(start) + h * 36e5)))
 
   const needName = () => { toast('First, tell the team who you are. Name is required.', 'warn'); return false }
@@ -133,11 +133,11 @@ export default function Join({ onDone }) {
           <div className="my-3 flex flex-wrap items-center gap-3">
             <label>Start<br /><input type="datetime-local" value={start} onChange={e => setStart(e.target.value)} /></label>
             <label>End<br /><input type="datetime-local" value={end} onChange={e => setEnd(e.target.value)} /></label>
-            <span className="text-sm text-mut">presets:</span>
+            <span className="text-sm text-mut w-full">presets:</span>
             {[24, 36, 48].map(h => <button key={h} className="btn" onClick={() => preset(h)}>{h}h</button>)}
           </div>
           <div className="my-3 flex flex-wrap items-center gap-3">
-            <span className="text-sm text-mut">Submission requires:</span>
+            <span className="text-sm text-mut w-full">Submission requires:</span>
             {REQS.map(([k, lbl]) => (
               <label key={k} className="flex items-center gap-1.5 text-ink">
                 <input type="checkbox" checked={reqs[k]} onChange={e => setReqs({ ...reqs, [k]: e.target.checked })} /> {lbl}
@@ -145,7 +145,7 @@ export default function Join({ onDone }) {
             ))}
           </div>
           <div className="my-3 flex flex-wrap items-center gap-3">
-            <span className="text-sm text-mut">Quest log starts with:</span>
+            <span className="text-sm text-mut w-full">Quest log starts with:</span>
             {[['classic', 'Classic plan (11 gates)'], ['empty', 'Start empty']].map(([v, lbl]) => (
               <label key={v} className="flex cursor-pointer items-center gap-1.5 text-ink">
                 <input type="radio" name="plan" checked={plan === v} onChange={() => setPlan(v)} /> {lbl}
