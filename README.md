@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="docs/logo.png" alt="Hackathon OS Logo" width="160" />
+
 # Hackathon OS
 
 **The real-time control center for hackathon teams.**
