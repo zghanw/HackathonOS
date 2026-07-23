@@ -1,117 +1,183 @@
+<div align="center">
+
 # Hackathon OS
 
-**A real-time collaboration space for hackathon teams. The single dashboard your entire team keeps open on a second monitor throughout the event.**
+**The real-time control center for hackathon teams.**
+One shared screen on a second monitor for your entire team throughout the event.
 
-Notion, Trello, and Slack treat time as metadata: a due date on a card or a reminder in a thread. A hackathon is a fixed window governed by hard deadlines: missing the submission deadline invalidates everything else built. Hackathon OS makes the countdown the central interface surface: every teammate's live status (who is online, who is stuck, and on what, right now) renders against a shared clock and unified submission milestones. Presence and deadlines operate as a single cohesive feature.
+[![React](https://img.shields.io/badge/React-18.3-61DAFB?style=flat-square&logo=react&logoColor=black)](https://react.dev/)
+[![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-v4-06B6D4?style=flat-square&logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
+[![Supabase](https://img.shields.io/badge/Supabase-Realtime_%26_Postgres-3ECF8E?style=flat-square&logo=supabase&logoColor=white)](https://supabase.com/)
+[![Vite](https://img.shields.io/badge/Vite-5.4-646CFF?style=flat-square&logo=vite&logoColor=white)](https://vitejs.dev/)
 
-## Features
+[Key Features](#key-features) • [Preview](#preview) • [Pixel Skin](#pixel-skin-v2-ui) • [Architecture](#architecture) • [Getting Started](#getting-started) • [Deployment](#self-hosting--database-setup)
 
-- **Team Space**: Create a space once; teammates join via a 6-character code. Establishes one shared mission (name, theme, tracks, tech stack, timeframe) per team rather than per browser.
-- **Real-Time Presence**: Live avatars with online, idle, and offline states, plus a free-text status line per teammate (Figma cursor-label style) and last-active timestamps powered by Supabase Realtime.
-- **Shared Deadline Guardian**: Synchronized countdown timer, deterministic milestone engine, and escalating alarms (browser notification, audio alert, tab title flashing, and screen flash) across all teammates' devices. Checking off a gate updates everyone's screen instantly with member attribution (e.g., Ben).
-- **Task Board**: Interactive Kanban board (To Do, Doing, Done) with member assignment and live state synchronization.
-- **Team Notes**: Shared collaborative scratchpad with a live edit indicator ("X is editing...") to prevent edit collisions.
-- **Shared Files**: Cloud file sharing for assets up to 10 MB per team (presentation decks, design assets, backup demo GIFs).
+---
+
+</div>
+
+## Overview
+
+Traditional management tools like Notion, Trello, and Slack treat time as passive metadata (such as a due date on a card or a reminder in a chat thread). In a hackathon, time is a fixed window with unforgiving submission deadlines.
+
+**Hackathon OS** makes the countdown the central interface surface. Teammate presence, active focus status, task boards, shared scratchpads, and hard-gate alarms render against a single synchronized clock across all devices.
+
+---
+
+## Preview
+
+<div align="center">
+  <img src="docs/after-guardian.png" alt="Hackathon OS Guardian Boss Timer" width="100%" />
+</div>
+
+<br />
+
+<div align="center">
+  <table width="100%">
+    <tr>
+      <td width="50%" align="center">
+        <b>Quest Board (Tasks)</b><br/>
+        <img src="docs/after-tasks.png" alt="Task Board" width="100%" />
+      </td>
+      <td width="50%" align="center">
+        <b>Team Space Join</b><br/>
+        <img src="docs/after-join.png" alt="Team Join Screen" width="100%" />
+      </td>
+    </tr>
+  </table>
+</div>
+
+---
+
+## Key Features
+
+> [!NOTE]
+> Designed specifically to run on a second monitor for the entire duration of a hackathon.
+
+### Team Workspace
+Create a team space once and invite teammates via a 6-character room code. Configures a shared mission profile (name, theme, tracks, tech stack, and submission window) synchronized across all client sessions.
+
+### Real-Time Presence
+Displays live member avatars with online, idle, and offline indicators. Each member can set a custom status line (similar to a Figma cursor label) showing current focus in real time.
+
+### Shared Deadline Guardian
+A synchronized countdown timer backed by a deterministic milestone engine. Escalates alerts (browser notifications, audio chimes, tab title flashing, and screen pulsing) across all team devices as submission deadlines approach. Checking off a milestone updates everyone's display instantly with member attribution.
+
+### Interactive Task Board
+A lightweight Kanban board (To Do, Doing, Done) supporting task assignment, live state synchronization, and team-wide visibility.
+
+### Collaborative Notes
+A single shared scratchpad featuring last-write-wins synchronization and live active-editor indicators to prevent overwrite collisions before they occur.
+
+### Asset Storage
+Cloud file sharing optimized for hackathon deliverables (up to 10 MB per team), including pitch deck drafts, design assets, and backup demonstration media.
+
+---
 
 ## Pixel Skin (v2 UI)
 
-The interface uses a 16-bit retro aesthetic designed for hackathon focus. UI modules are stylized as game elements: Guardian acts as the **Boss Timer**, Tasks as the **Quest Board**, Notes as the **Tome**, and Files as the **Chest**. This is a pure presentation layer: the core engine, data layer, real-time sync, and application logic remain byte-identical.
+The user interface uses a 16-bit retro aesthetic designed for high visibility and reduced cognitive fatigue. Modules are presented as game elements:
 
-- **Panels**: Chunky pixel bevels using layered zero-blur `box-shadow` styles and hard drop shadows. Removed `backdrop-filter` and animated background blobs to eliminate GPU overhead, replacing them with a static dither and vignette.
-- **Typography**: Press Start 2P for chrome elements (headings, labels, buttons, countdown digits) paired with JetBrains Mono for body copy to preserve legibility.
-- **Motion**: `steps()` animation timing function, CSS active state button press-down effects (2 to 3 px), and strictly budgeted continuous animations (two subtle pulsing chips for danger states). Full support for `prefers-reduced-motion`.
-- **Icons**: Inline SVGs styled with square caps and miter joins, requiring zero additional asset network requests.
-- **Performance Benchmarks**: Frame sampling at 1440x900 resolution showed average frame rendering times of 6.1 ms during active tab switches and gate toggles (compared to 7.5 ms baseline in the legacy glass build). Frame capture documentation is available in [docs/](docs/).
-- **Copy Guidelines**: Strict exclusion of em dashes in UI copy. Rendered strings use periods, colons, commas, or middle dots for metadata.
+- **Boss Timer**: Guardian module for milestone countdowns and deadline alerts.
+- **Quest Board**: Task management interface.
+- **Tome**: Collaborative scratchpad for team notes.
+- **Chest**: Shared file repository.
+
+### Technical Performance Highlights
+
+- **Custom Pixel Bevels**: Created using layered zero-blur `box-shadow` definitions and hard offset drop shadows.
+- **Zero GPU Overhead**: Removed heavy `backdrop-filter` rules and continuous background animations, replacing them with a static dither pattern and vignette painted once on load.
+- **Dual-Font Typography**: Combines *Press Start 2P* for chrome elements (headings, buttons, countdown digits) with *JetBrains Mono* for readable body text.
+- **Framerate Metrics**: Performance profiling at 1440x900 resolution demonstrated an average frame render time of 6.1 ms during active tab switches and milestone toggles (compared to 7.5 ms baseline in legacy builds).
+
+---
 
 ## Architecture
 
-React 18 + Tailwind CSS v4 (Vite) static frontend with a **Supabase** backend (Postgres, Realtime, Storage) requiring zero custom server infrastructure.
+Built as a static React 18 application powered by Tailwind CSS v4 and Vite, backed by Supabase for real-time data persistence.
 
 ```
 frontend/src/
-├── lib/core.js       Deterministic engine: milestones, pace calculations, and alarm cadence.
-│                     Pure JavaScript and node-testable. Identical milestones are derived on
-│                     every client from team window inputs, avoiding database sync overhead.
-├── lib/supabase.js   Supabase client initialization.
-├── lib/team.js       Centralized data layer hook owning session state, shared state, and
-│                     real-time subscriptions.
-├── lib/ui.jsx        SVG icons, alarm handlers, and toast utilities.
-├── App.jsx           Main application shell: header, countdown display, avatars, guardian alarm loop, and tab routing.
-└── modules/          Join, Guardian, Tasks, Notes, and Files modules.
-supabase/migrations/  Database schema migrations for self-hosting on any Supabase project.
+├── lib/core.js       Deterministic milestone engine, pace logic, and alarm timing.
+│                     Pure JavaScript module with standalone test suite. Identical milestones
+│                     are computed locally on each client, minimizing database overhead.
+├── lib/supabase.js   Supabase client configuration and initialization.
+├── lib/team.js       Centralized custom hook managing session state and real-time channels.
+├── lib/ui.jsx        SVG icons, alarm sound synthesis, and toast notification utilities.
+├── App.jsx           Root shell: navigation bar, countdown header, avatars, and tab router.
+└── modules/          Join, Guardian, Tasks, Notes, and Files component views.
+supabase/migrations/  SQL schema files for self-hosting on any PostgreSQL / Supabase project.
 ```
 
-### Sync Architecture
+### Sync Mechanisms
 
-Tables use the `hackos_` prefix:
+All database tables are namespaced with the `hackos_` prefix.
 
-| Surface | Sync Mechanism |
+| Feature Surface | Synchronization Strategy |
 |---|---|
-| Milestones, Tasks, Notes, Member Status, Idle/Editing flags | Supabase `postgres_changes` on `hackos_*` tables, filtered per team |
+| Milestones, Tasks, Notes, Statuses | Supabase `postgres_changes` subscriptions filtered by team ID |
 | Online / Offline Presence | Supabase Realtime Presence channel (join and leave events) |
-| File List Changes & Gate Removals | Supabase Realtime broadcast on the team channel |
+| File Lists & Gate Removals | Supabase Realtime Broadcast events on the team channel |
 
-The timeline is fully team-managed: members can add, edit (label, target time, hard-gate status), or remove gates inline with full undo capability and remote attribution toasts.
-
-Identity is lightweight and session-based without mandatory account registration: joining creates a team member record stored in `localStorage`. Append `?fresh` to the URL to simulate additional teammates in separate tabs of the same browser.
+---
 
 ## Getting Started
 
-### Local Development
+### Prerequisites
 
-1. Navigate to the frontend directory and install dependencies:
+- Node.js version 18 or higher
+- npm package manager
+
+### Local Development Setup
+
+1. Clone the repository and navigate to the frontend directory:
    ```bash
    cd frontend
    npm install
    ```
 
-2. Start the development server:
+2. Configure environment variables in `frontend/.env`:
+   ```env
+   VITE_SUPABASE_URL=https://YOUR-PROJECT-REF.supabase.co
+   VITE_SUPABASE_ANON_KEY=sb_publishable_...
+   ```
+
+3. Launch the local development server:
    ```bash
    npm run dev
    ```
-   Access the app at `http://localhost:5173`.
+   Open `http://localhost:5173` in your browser.
 
-3. Run the core engine tests:
+4. Execute core engine tests:
    ```bash
    npm test
    ```
-   Or directly: `node frontend/src/lib/core.js` (expected output: `PASS`).
+   Expected output: `PASS`
 
-### Supabase Configuration
+---
 
-Create `frontend/.env` with your project credentials:
+## Self-Hosting & Database Setup
 
-```env
-VITE_SUPABASE_URL=https://YOUR-PROJECT-REF.supabase.co
-VITE_SUPABASE_ANON_KEY=sb_publishable_...
-```
+To deploy your own backend instance:
 
-To rehost the backend:
-1. Create a new Supabase project.
-2. Run the database migration script [supabase/migrations/001_hackos_team_space.sql](supabase/migrations/001_hackos_team_space.sql) in the Supabase SQL Editor.
-3. Update `frontend/.env` with your new project credentials.
+1. Create a project in [Supabase](https://supabase.com/).
+2. Open the SQL Editor in the Supabase Dashboard and run the script located at [supabase/migrations/001_hackos_team_space.sql](supabase/migrations/001_hackos_team_space.sql).
+3. Copy your project URL and public anon key into `frontend/.env`.
 
-### Deployment
+---
 
-Deploy to Vercel from the repository root:
+## Security Model
 
-```bash
-vercel
-```
+Row Level Security (RLS) is enabled across all `hackos_*` tables. Data access is governed by the shared 6-character team code. For enterprise or public multi-tenant environments, the schema can be extended with Supabase Auth policies as indicated in the migration script.
 
-Configure `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in your Vercel project environment settings.
+---
 
-### Security Model
+## Architecture Refactoring History
 
-Row Level Security (RLS) is enabled across all `hackos_*` tables. Access is scoped by the shared 6-character team join code. For production environments requiring strict user isolation, the system can be upgraded to Supabase Auth with authenticated user RLS policies as outlined in the database migration file.
+The codebase was refactored from a single-player AI tool into a dedicated multiplayer team dashboard. Key changes include:
 
-## Evolution and Simplification
+- **AI Layer Removal**: Removed `lib/agents.js` (Scout, Strategist, Pitchsmith modules) and Anthropic API dependencies.
+- **Simplified Navigation**: Removed settings and standalone AI prompt tabs.
+- **Embedded References**: Converted judging rubric weights and recording checklists into static reference modules inside the Guardian view.
 
-The architecture was deliberately refactored from a single-player AI copilot to a real-time multiplayer team workspace. Non-essential AI code was removed:
-
-- **`lib/agents.js`**: Removed AI agents (Scout, Strategist, Guardian triage, Pitchsmith) and Anthropic API client code.
-- **Settings Tab**: Removed key management interfaces.
-- **Ideas & Pitch Tabs**: AI generation interfaces were replaced with static reference tiles (Recording Checklist and Judging Rubric Weights) embedded in the Guardian tab.
-- **Core Engine Clean Up**: Removed offline AI shadow data (`SPONSORS`, `IDEA_BANK`) while preserving the deterministic core milestone engine.
 
