@@ -5,12 +5,13 @@
 **The real-time control center for hackathon teams.**
 One shared screen on a second monitor for your entire team throughout the event.
 
-[![React](https://img.shields.io/badge/React-18.3-61DAFB?style=flat-square&logo=react&logoColor=black)](https://react.dev/)
-[![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-v4-06B6D4?style=flat-square&logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
-[![Supabase](https://img.shields.io/badge/Supabase-Realtime_%26_Postgres-3ECF8E?style=flat-square&logo=supabase&logoColor=white)](https://supabase.com/)
-[![Vite](https://img.shields.io/badge/Vite-5.4-646CFF?style=flat-square&logo=vite&logoColor=white)](https://vitejs.dev/)
+[![React](https://img.shields.io/badge/React_18-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)](https://react.dev/)
+[![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS_v4-38B2AC?style=for-the-badge&logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
+[![Supabase](https://img.shields.io/badge/Supabase-3ECF8E?style=for-the-badge&logo=supabase&logoColor=white)](https://supabase.com/)
+[![Vite](https://img.shields.io/badge/Vite_5.4-646CFF?style=for-the-badge&logo=vite&logoColor=white)](https://vitejs.dev/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](LICENSE)
 
-[Key Features](#key-features) • [Preview](#preview) • [Pixel Skin](#pixel-skin-v2-ui) • [Architecture](#architecture) • [Getting Started](#getting-started) • [Deployment](#self-hosting--database-setup)
+[Key Features](#key-features) • [Preview](#preview) • [Pixel Skin](#pixel-skin-v2-ui) • [Architecture](#architecture) • [Getting Started](#getting-started) • [License](#license)
 
 ---
 
@@ -179,5 +180,12 @@ The codebase was refactored from a single-player AI tool into a dedicated multip
 - **AI Layer Removal**: Removed `lib/agents.js` (Scout, Strategist, Pitchsmith modules) and Anthropic API dependencies.
 - **Simplified Navigation**: Removed settings and standalone AI prompt tabs.
 - **Embedded References**: Converted judging rubric weights and recording checklists into static reference modules inside the Guardian view.
+
+---
+
+## License
+
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+
 
 
