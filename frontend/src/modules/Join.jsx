@@ -90,7 +90,7 @@ export default function Join({ onDone }) {
     <main className="mx-auto max-w-[1080px] px-5 pb-24 pt-10">
       <div className="mb-8 text-center">
         <div className="mb-3 inline-flex items-center gap-2.5">
-          <Ic n="clock" s={24} className="text-acc" />
+          <img src="/logo.png" alt="Hackathon OS Logo" className="h-8 w-8 object-contain" />
           <span className="font-pixel text-[20px] text-acc">HACKATHON OS</span>
         </div>
         <p className="text-mut">The one screen your whole party keeps open. Presence, quests, the tome and the chest,<br />all against the same countdown to the same hard gates.</p>

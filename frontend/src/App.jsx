@@ -130,7 +130,7 @@ export default function App() {
 
       <header className="sticky top-0 z-20 flex flex-wrap items-center gap-3 border-b-[3px] border-edge bg-[#1c1730] px-5 py-3 shadow-[0_3px_0_rgba(0,0,0,.4)]">
         <div className="flex items-center gap-2.5 leading-tight">
-          <Ic n="clock" s={20} className="text-acc" />
+          <img src="/logo.png" alt="Hackathon OS Logo" className="h-6 w-6 object-contain" />
           <span>
             <span className="font-pixel text-[12px] text-acc">HACKATHON OS</span>
             <small className="block text-[11px] tracking-normal text-mut">{team.name || 'team space'}</small>
