@@ -191,6 +191,8 @@ To host your own backend instance on Supabase:
 5. Create a Storage Bucket named `hackos_files` with public or authenticated access depending on your needs.
 6. Copy your project URL and public anon key into `frontend/.env`.
 
+> **Wake the backend before the event.** Supabase free-tier projects pause automatically after about a week of inactivity, and a paused project stops resolving its hostname entirely. The app then fails at the first request: no team create, no join, no presence, no gates. Open the Supabase dashboard (or hit any table) a day before the hackathon and confirm the project reads `ACTIVE_HEALTHY`. Restoring takes a few minutes, which is time you will not have on demo day.
+
 ---
 
 ## Security Model
