@@ -18,8 +18,10 @@ export function genMilestones(start, end, reqs = { devpost: true, video: true, r
     [start + 0.60 * W, 'Full demo path clickable, start to finish', 0, null],
     [end - 6 * H * s, 'Stable build deployed: freeze candidate', 0, null],
     [end - 4 * H * s, 'CODE FREEZE: bugfixes only, no new features', 1, null],
+    [end - 3 * H * s, 'Pitch deck done, one dry run out loud', 0, 'slides'],
     [end - 2 * H * s, 'Demo video recorded and uploaded', 1, 'video'],
     [end - 1.5 * H * s, 'Devpost draft: title, tagline, screenshots in', 0, 'devpost'],
+    [end - 1.25 * H * s, 'Written report finalized and uploaded', 0, 'report'],
     [end - 45 * MIN * s, 'Submission form COMPLETE, every required field', 1, null],
     [end - 20 * MIN * s, 'Repo public, README says how to run it', 0, 'repo'],
     [end - 10 * MIN, 'SUBMIT NOW. Polish is a trap.', 1, null],
@@ -71,6 +73,14 @@ export function selftest() {
   A(ms.filter(m => m.hard).length === 5, '5 hard gates');
   A(ms[ms.length - 1].at === t1 - 10 * MIN, 'submit gate at T-10m');
   A(genMilestones(t0, t1, { devpost: false, video: false, repo: false }).length === 8, 'req-tied milestones drop');
+  // Regression: ISSUE-001 — 'slides'/'report' checkboxes existed in the setup form but
+  // no milestone was tied to them, so ticking them produced no gate.
+  // Found by /qa on 2026-08-15. Report: .gstack/qa-reports/
+  const allReqs = genMilestones(t0, t1, { devpost: true, video: true, repo: true, slides: true, report: true });
+  A(allReqs.length === 13, 'slides + report each add a gate');
+  A(allReqs.some(m => /Pitch deck/.test(m.label)), 'slides requirement produces a deck gate');
+  A(allReqs.some(m => /report/i.test(m.label)), 'report requirement produces a report gate');
+  A(!genMilestones(t0, t1, { slides: false, report: false }).some(m => /Pitch deck|report/i.test(m.label)), 'unchecked slides/report add no gates');
   A(paceState(ms, t0) === 'ok', 'fresh run is ok');
   A(paceState(ms, ms[0].at + 1) === 'behind', 'one soft miss = behind');
   A(paceState(ms, ms.find(m => m.hard).at + 1) === 'danger', 'hard gate miss = danger');
