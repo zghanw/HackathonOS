@@ -6,3 +6,7 @@ __pycache__/
 backend/state.json
 .gstack/
 .claude/
+# generated dev/QA evidence: kept locally, not shipped
+docs/before-*.png
+docs/guardian-editable-questlog.png
+docs/quests-checklist-seeded.png
