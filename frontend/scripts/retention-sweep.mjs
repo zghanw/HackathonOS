@@ -25,7 +25,16 @@ const env = Object.fromEntries(
     .map(l => [l.slice(0, l.indexOf('=')).trim(), l.slice(l.indexOf('=') + 1).trim()]),
 )
 
-const supabase = createClient(env.VITE_SUPABASE_URL, env.VITE_SUPABASE_ANON_KEY)
+// MUST run with the service-role key. Membership RLS hides every team from the
+// anon role, so an anon sweeper would see zero live teams, judge ALL files
+// orphaned, and wipe the bucket. Fail closed rather than risk that.
+const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_SERVICE_ROLE_KEY
+if (!serviceKey) {
+  console.error('Refusing to run without SUPABASE_SERVICE_ROLE_KEY (see .env.example).')
+  console.error('The anon key cannot see teams under RLS and would delete every file.')
+  process.exit(1)
+}
+const supabase = createClient(env.VITE_SUPABASE_URL, serviceKey, { auth: { persistSession: false } })
 const fail = (msg, e) => { console.error(`${msg}: ${e?.message || e}`); process.exit(1) }
 
 const { data: teams, error: teamErr } = await supabase.from('hackos_teams').select('id')

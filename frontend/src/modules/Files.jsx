@@ -11,15 +11,23 @@ const safeName = n => n.replace(/[^\w.\-() ]+/g, '_')
 // design exports, and the backup demo GIF. ponytail: a flat list, not a DMS.
 export default function Files({ teamId, filesVersion, api }) {
   const [files, setFiles] = useState([])
+  const [urls, setUrls] = useState({})   // name -> short-lived signed URL (private bucket)
   const [busy, setBusy] = useState(false)
   const input = useRef(null)
 
-  const refresh = () => supabase.storage.from(BUCKET)
-    .list(teamId, { sortBy: { column: 'created_at', order: 'desc' } })
-    .then(({ data, error }) => {
-      if (error) toast('File list failed: ' + error.message, 'bad')
-      else setFiles(data || [])
-    })
+  const refresh = async () => {
+    const { data, error } = await supabase.storage.from(BUCKET)
+      .list(teamId, { sortBy: { column: 'created_at', order: 'desc' } })
+    if (error) { toast('File list failed: ' + error.message, 'bad'); return }
+    setFiles(data || [])
+    // bucket is private: mint signed download URLs (1h) for the files we can see.
+    // Membership RLS already scoped the list, so this only ever signs our own team's.
+    if (data?.length) {
+      const { data: signed } = await supabase.storage.from(BUCKET)
+        .createSignedUrls(data.map(f => `${teamId}/${f.name}`), 3600)
+      setUrls(Object.fromEntries((signed || []).map(s => [s.path.split('/').pop(), s.signedUrl])))
+    } else setUrls({})
+  }
 
   useEffect(() => { refresh() }, [teamId, filesVersion]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -46,7 +54,7 @@ export default function Files({ teamId, filesVersion, api }) {
     api.pingFiles()
   }
 
-  const urlOf = f => supabase.storage.from(BUCKET).getPublicUrl(`${teamId}/${f.name}`).data.publicUrl
+  const urlOf = f => urls[f.name]
 
   return (
     <div className="panel animate-rise p-6">

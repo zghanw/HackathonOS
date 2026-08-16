@@ -221,7 +221,21 @@ Storage is the quota that actually bites (1GB free, 10MB per upload); team rows 
 
 ## Security Model
 
-Row Level Security (RLS) is enabled across all `hackos_*` tables. Data access is scoped to team members possessing the 6-character room code. For enterprise multi-tenant deployments, the schema can be extended with Supabase Auth user policies as detailed in the SQL migration comments.
+The v1 posture was deliberately open (`USING(true)` on every table, "the join code is the only secret"). A pentest with the shipped anon key proved that was no security at all: the code was itself readable, so anyone could enumerate every team, read all members and notes, and delete any team. The current model closes that.
+
+**Identity.** Every browser silently signs in with Supabase **anonymous auth** on first load (no login screen, still join-by-code), giving a stable `auth.uid()` per device. That identity is what Realtime and RLS key on, so live sync keeps working while access is scoped per user.
+
+**Membership-scoped RLS.** `hackos_is_member(team_id)` gates every table: you can read and write a team's rows only if you hold a member row in that team bound to your `auth.uid()`. A non-member cannot SELECT the team at all (so codes and data are unreachable), cannot write to it, and cannot delete it. All policies are scoped to the `authenticated` role, so a request with no session touches nothing.
+
+**Gated entry.** Creating and joining go through `SECURITY DEFINER` RPCs (`hackos_create_team`, `hackos_join_team`), the only way to gain membership. The server generates the code, validates the join code, and binds the new member to `auth.uid()`. Direct INSERTs to teams/members are forbidden, so memberships can't be forged.
+
+**Storage.** The `hackos-files` bucket is private; read/write/delete are membership-scoped by the `{team_id}/` path prefix, and downloads use short-lived signed URLs. The retention sweeper must run with the **service-role key** (it needs to see all teams to find orphans) and refuses to run without it.
+
+**Input caps.** DB-level `CHECK` constraints bound every user field (names, labels, notes, codes) so a single row or upload can't balloon storage or memory.
+
+Applying the security migrations (`004`, `005`) requires **anonymous sign-ins enabled** in the dashboard (Authentication → Sign In → Anonymous). Migration `005` bricks the app if applied before that toggle and the client are in place, since `auth.uid()` would be null for everyone.
+
+Accepted advisor warnings (intentional, not holes): the `SECURITY DEFINER` functions are the gated entry points and must be callable (they check `auth.uid()` and validate input); `hackos_is_member` must be executable by `authenticated` because the RLS policies call it; `hackos_retention_log` has RLS on with no policy on purpose (deny-all to clients, cron reads it as `postgres`); leaked-password protection is moot with no passwords.
 
 ---
 

@@ -4,7 +4,7 @@
 // and an `api` of mutations — no component talks to supabase directly except
 // Files.jsx (storage calls need no shared state).
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { supabase } from './supabase.js'
+import { supabase, ensureSession } from './supabase.js'
 import { toast } from './ui.jsx'
 
 const SKEY = 'hackos-team-v3'
@@ -21,43 +21,31 @@ const store = () => (isGuestTab() ? sessionStorage : localStorage)
 const loadSess = () => { try { return JSON.parse(store().getItem(SKEY)) } catch { return null } }
 const saveSess = s => { s ? store().setItem(SKEY, JSON.stringify(s)) : store().removeItem(SKEY) }
 
-const CODE_ALPHA = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789' // no 0/O/1/I/L — codes get read out loud
-const genCode = () => Array.from(crypto.getRandomValues(new Uint8Array(6)), b => CODE_ALPHA[b % CODE_ALPHA.length]).join('')
-const COLORS = ['#4ade80', '#38bdf8', '#c084fc', '#fbbf24', '#fb7185', '#34d399', '#f472b6', '#a3e635']
-
-async function addMember(teamId, name, idx) {
-  const { data, error } = await supabase.from('hackos_members')
-    .insert({ team_id: teamId, name: name.trim(), color: COLORS[idx % COLORS.length], last_active: Date.now() })
-    .select().single()
-  if (error) throw error
-  return data
-}
-
+// Create + join go through SECURITY DEFINER RPCs, not raw INSERTs. The strict
+// RLS forbids direct writes to teams/members, so these functions are the only
+// way to gain membership: the server generates the code, validates the join
+// code, and binds the new member row to auth.uid(). A client can no longer
+// enumerate teams, forge a membership, or read a code it wasn't given.
 export async function createTeam(form, userName) {
-  const { data: team, error } = await supabase.from('hackos_teams').insert({
-    code: genCode(), name: form.name, theme: form.theme, tracks: form.tracks,
-    stack: form.stack, starts_at: form.start, ends_at: form.end, reqs: form.reqs,
-  }).select().single()
+  await ensureSession()
+  const { data, error } = await supabase.rpc('hackos_create_team', {
+    p_name: form.name, p_theme: form.theme, p_tracks: form.tracks, p_stack: form.stack,
+    p_starts_at: form.start, p_ends_at: form.end, p_reqs: form.reqs,
+    p_member_name: userName.trim(), p_milestones: form.milestones?.length ? form.milestones : null,
+  })
   if (error) throw error
-  const me = await addMember(team.id, userName, 0)
-  // optional starting preset (classic plan); after creation everything is editable
-  if (form.milestones?.length) {
-    const { error: mErr } = await supabase.from('hackos_milestones').insert(
-      form.milestones.map(m => ({ team_id: team.id, label: m.label, at: m.at, hard: m.hard, updated_by: me.id })))
-    if (mErr) throw mErr
-  }
-  return { teamId: team.id, memberId: me.id }
+  const row = data[0]
+  return { teamId: row.team_id, memberId: row.member_id }
 }
 
 export async function joinTeam(code, userName) {
-  const { data: team, error } = await supabase.from('hackos_teams').select('id')
-    .eq('code', code.trim().toUpperCase()).maybeSingle()
-  if (error) throw error
-  if (!team) throw new Error('No team found for that code')
-  const { count } = await supabase.from('hackos_members')
-    .select('*', { count: 'exact', head: true }).eq('team_id', team.id)
-  const me = await addMember(team.id, userName, count || 0)
-  return { teamId: team.id, memberId: me.id }
+  await ensureSession()
+  const { data, error } = await supabase.rpc('hackos_join_team', {
+    p_code: code.trim().toUpperCase(), p_member_name: userName.trim(),
+  })
+  if (error) throw new Error(/no team found/i.test(error.message) ? 'No team found for that code' : error.message)
+  const row = data[0]
+  return { teamId: row.team_id, memberId: row.member_id }
 }
 
 const err = ({ error }) => { if (error) toast('Sync failed: ' + error.message, 'bad') }
@@ -84,6 +72,7 @@ export function useTeam() {
   useEffect(() => {
     if (!teamId) { setReady(true); return }
     let dead = false
+    let db = null, pres = null
 
     async function load() {
       const [t, m, g, k, n] = await Promise.all([
@@ -94,14 +83,15 @@ export function useTeam() {
         supabase.from('hackos_notes').select('*').eq('team_id', teamId).maybeSingle(),
       ])
       if (dead) return
+      // a member row bound to this browser's uid is what proves membership; without
+      // it (RLS hides the team, or the space was purged) drop back to the join screen
       if (!t.data || !(m.data || []).some(x => x.id === myId)) {
-        toast('That team space no longer exists.', 'warn')
+        toast('That team space is no longer available.', 'warn')
         setSess(null); setReady(true); return
       }
       setTeam(t.data); setMembers(m.data); setMilestones(g.data || []); setTasks(k.data || []); setNote(n.data || null)
       setReady(true)
     }
-    load()
 
     // generic row reducer. DELETE events are not team-filtered by realtime, so
     // guard on old.team_id (present: pk on gates/notes, replica identity full on tasks/members)
@@ -131,34 +121,43 @@ export function useTeam() {
       const who = membersRef.current.find(x => x.id === nw.updated_by)?.name || 'A teammate'
       toast(`${who} ${eventType === 'INSERT' ? 'added' : 'edited'} gate: ${nw.label}`, 'ok')
     }
-    const db = supabase.channel('db-' + teamId)
-      .on('postgres_changes', F({ table: 'hackos_milestones', filter: `team_id=eq.${teamId}` }),
-        p => { announce(p); apply(setMilestones, r => r.id)(p) })
-      .on('postgres_changes', F({ table: 'hackos_tasks', filter: `team_id=eq.${teamId}` }), apply(setTasks, r => r.id))
-      .on('postgres_changes', F({ table: 'hackos_members', filter: `team_id=eq.${teamId}` }), apply(setMembers, r => r.id))
-      .on('postgres_changes', F({ table: 'hackos_notes', filter: `team_id=eq.${teamId}` }),
-        p => { if (p.eventType !== 'DELETE') setNote(p.new); else if (p.old.team_id === teamId) setNote(null) })
-      .on('postgres_changes', F({ event: 'UPDATE', table: 'hackos_teams', filter: `id=eq.${teamId}` }), p => setTeam(p.new))
-      .subscribe()
+    // establish the anonymous session BEFORE loading or subscribing: realtime
+    // authorizes postgres_changes with the JWT, and RLS needs auth.uid() present,
+    // so a pre-auth subscribe would silently receive nothing.
+    ensureSession().then(async () => {
+      if (dead) return
+      await load()
+      if (dead) return
 
-    // presence meta is deliberately empty: join/leave is the only signal this
-    // channel carries reliably (meta re-tracks don't propagate to peers)
-    const pres = supabase.channel('presence-' + teamId, { config: { presence: { key: myId } } })
-      .on('presence', { event: 'sync' }, () => {
-        setPresence(Object.fromEntries(Object.keys(pres.presenceState()).map(k => [k, true])))
-      })
-      .on('broadcast', { event: 'files' }, () => setFilesVersion(v => v + 1))
-      .on('broadcast', { event: 'gate-removed' }, ({ payload }) => {
-        if (!payload || payload.by === myId) return
-        const who = membersRef.current.find(x => x.id === payload.by)?.name || 'A teammate'
-        toast(`${who} removed gate: ${payload.label}`, 'ok')
-      })
-      .subscribe(status => {
-        if (status === 'SUBSCRIBED') pres.track({})
-      })
-    presChan.current = pres
+      db = supabase.channel('db-' + teamId)
+        .on('postgres_changes', F({ table: 'hackos_milestones', filter: `team_id=eq.${teamId}` }),
+          p => { announce(p); apply(setMilestones, r => r.id)(p) })
+        .on('postgres_changes', F({ table: 'hackos_tasks', filter: `team_id=eq.${teamId}` }), apply(setTasks, r => r.id))
+        .on('postgres_changes', F({ table: 'hackos_members', filter: `team_id=eq.${teamId}` }), apply(setMembers, r => r.id))
+        .on('postgres_changes', F({ table: 'hackos_notes', filter: `team_id=eq.${teamId}` }),
+          p => { if (p.eventType !== 'DELETE') setNote(p.new); else if (p.old.team_id === teamId) setNote(null) })
+        .on('postgres_changes', F({ event: 'UPDATE', table: 'hackos_teams', filter: `id=eq.${teamId}` }), p => setTeam(p.new))
+        .subscribe()
 
-    return () => { dead = true; supabase.removeChannel(db); supabase.removeChannel(pres); presChan.current = null }
+      // presence meta is deliberately empty: join/leave is the only signal this
+      // channel carries reliably (meta re-tracks don't propagate to peers)
+      pres = supabase.channel('presence-' + teamId, { config: { presence: { key: myId } } })
+        .on('presence', { event: 'sync' }, () => {
+          setPresence(Object.fromEntries(Object.keys(pres.presenceState()).map(k => [k, true])))
+        })
+        .on('broadcast', { event: 'files' }, () => setFilesVersion(v => v + 1))
+        .on('broadcast', { event: 'gate-removed' }, ({ payload }) => {
+          if (!payload || payload.by === myId) return
+          const who = membersRef.current.find(x => x.id === payload.by)?.name || 'A teammate'
+          toast(`${who} removed gate: ${payload.label}`, 'ok')
+        })
+        .subscribe(status => {
+          if (status === 'SUBSCRIBED') pres.track({})
+        })
+      presChan.current = pres
+    }).catch(e => { if (!dead) { toast('Sign-in failed: ' + e.message, 'bad'); setReady(true) } })
+
+    return () => { dead = true; if (db) supabase.removeChannel(db); if (pres) supabase.removeChannel(pres); presChan.current = null }
   }, [teamId, myId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // my liveness flags — on the member row so postgres_changes fans them out
