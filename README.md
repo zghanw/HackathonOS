@@ -195,6 +195,30 @@ To host your own backend instance on Supabase:
 
 ---
 
+## Data Retention (TTL)
+
+Rooms are disposable by nature: a hackathon ends and its team space is dead weight. Retention is anchored on `hackos_teams.ends_at`, the event's hard end, so the system never has to guess from activity heuristics. Migration [003_retention.sql](supabase/migrations/003_retention.sql) installs it.
+
+**Rows** are cleared in SQL. `hackos_purge_expired(grace_days, dry_run)` deletes teams whose event ended more than `grace_days` ago; foreign key cascades take members, milestones, tasks and notes with them. It is dry run by default, refuses any window under 7 days, and writes one row per purged team to `hackos_retention_log` so the data has an obituary after it is gone. A `pg_cron` job named `hackos-retention` runs it daily at 03:17 UTC with a 30-day window.
+
+```sql
+select * from hackos_purge_expired(30, true);   -- preview, deletes nothing
+select * from hackos_purge_expired(30, false);  -- purge now
+select cron.unschedule('hackos-retention');     -- disarm the daily job
+```
+
+**Files** cannot be cleared the same way: `storage.objects` carries a `protect_objects_delete` trigger that rejects SQL deletes, so only the Storage API can remove them. A sweeper handles that pass, deriving orphans from current state (a file prefix under `hackos-files/{team_id}/` with no surviving team) rather than from a delete queue. That makes it self-healing: a half-failed purge, a manual row delete or a missed run all reconcile on the next pass.
+
+```sh
+npm run sweep          # dry run, lists reclaimable files
+npm run sweep:apply    # delete them
+select * from hackos_orphan_files;   -- same view, from SQL
+```
+
+Storage is the quota that actually bites (1GB free, 10MB per upload); team rows are a few KB each against a 500MB database, so the row purge is hygiene rather than savings. Note also that `pg_cron` only fires while the project is running, so on a free tier that pauses when idle, treat the schedule as best-effort and run the sweep manually after a long gap.
+
+---
+
 ## Security Model
 
 Row Level Security (RLS) is enabled across all `hackos_*` tables. Data access is scoped to team members possessing the 6-character room code. For enterprise multi-tenant deployments, the schema can be extended with Supabase Auth user policies as detailed in the SQL migration comments.
