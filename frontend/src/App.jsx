@@ -3,6 +3,7 @@ import { paceState, fmtDur, fmtShort, fmtAgo, remindEvery } from './lib/core.js'
 import { useTeam } from './lib/team.js'
 import { Ic, notify, flash, audioInit, copyText } from './lib/ui.jsx'
 import Join from './modules/Join.jsx'
+import Landing from './modules/Landing.jsx'
 import Guardian from './modules/Guardian.jsx'
 import Tasks from './modules/Tasks.jsx'
 import Notes from './modules/Notes.jsx'
@@ -49,6 +50,7 @@ export default function App() {
   const T = useTeam()
   const { team, members, milestones: mRows, tasks, note, presence, myId, api } = T
   const [tab, setTab] = useState('guardian')
+  const [entered, setEntered] = useState(false) // landing -> join gate for first-time visitors
   const [now, setNow] = useState(Date.now())
   const book = useRef({}) // per-milestone alarm bookkeeping — reset on reload is fine
 
@@ -111,7 +113,9 @@ export default function App() {
     return (
       <>
         <div id="bg" aria-hidden="true" />
-        <Join onDone={T.setSess} />
+        {entered
+          ? <Join onDone={T.setSess} />
+          : <Landing onEnter={() => setEntered(true)} />}
         <div id="flash" /><div id="toasts" />
       </>
     )

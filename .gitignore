@@ -10,3 +10,8 @@ backend/state.json
 docs/before-*.png
 docs/guardian-editable-questlog.png
 docs/quests-checklist-seeded.png
+
+# impeccable dev docs + artifacts (generated locally, not shipped)
+.impeccable/
+PRODUCT.md
+DESIGN.md
