@@ -13,7 +13,7 @@
 [![Vite](https://img.shields.io/badge/Vite_5.4-646CFF?style=for-the-badge&logo=vite&logoColor=white)](https://vitejs.dev/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](LICENSE)
 
-[Overview](#overview) • [Preview](#preview) • [Key Features](#key-features) • [Pixel Skin v2 UI](#pixel-skin-v2-ui) • [Architecture](#architecture) • [Getting Started](#getting-started) • [Self-Hosting](#self-hosting--database-setup) • [License](#license)
+[Overview](#overview) • [Preview](#preview) • [Title Screen](#the-title-screen) • [Key Features](#key-features) • [Pixel Skin v2 UI](#pixel-skin-v2-ui) • [Architecture](#architecture) • [Getting Started](#getting-started) • [Self-Hosting](#self-hosting--database-setup) • [License](#license)
 
 ---
 
@@ -33,6 +33,14 @@ Traditional project management tools like Notion, Trello, and Slack treat time a
 ## Preview
 
 <div align="center">
+  <b>Title Screen</b> — the landing that boots into the app, with a live countdown as the hero<br/>
+  <img src="docs/landing.png" alt="Hackathon OS arcade title-screen landing page" width="100%" />
+</div>
+
+<br />
+
+<div align="center">
+  <b>Boss Timer</b> — the shared deadline guardian<br/>
   <img src="docs/after-guardian.png" alt="Hackathon OS Guardian Boss Timer" width="100%" />
 </div>
 
@@ -52,6 +60,18 @@ Traditional project management tools like Notion, Trello, and Slack treat time a
     </tr>
   </table>
 </div>
+
+---
+
+## The Title Screen
+
+First-time visitors land on an arcade **title screen** that boots straight into the app, extending the same 16-bit world instead of a generic marketing page. It is a route inside the app (rendered before the join screen), not a separate site.
+
+- **Live countdown hero.** The centerpiece is a real, ticking Boss Timer (labelled `DEMO`), so the product proves itself instead of asserting a claim. `PRESS START` reveals the create/join flow.
+- **The wedge, stated plainly.** A *"your real boss is the clock"* section frames the differentiator: a hackathon is a fixed window with hard gates, not a project, so presence and deadlines are one feature, not two tabs.
+- **Five systems, shown live.** Boss Timer, Party Presence, Quest Board, Tome and Chest are previewed with real-looking state, then a three-step *"boot a run"* walkthrough and a source-backed *"no mocked multiplayer"* section (real-time by Supabase, membership-scoped security, a deterministic tested engine, MIT).
+- **Honest by design.** The hero countdown and party lineup are illustrative demo data; every factual claim is true of the shipped product. No fabricated metrics, testimonials, or logos.
+- **Same performance discipline.** Static CRT scanlines and dither, a pixel wordmark with stepped shadows, level-select tiles that physically press on hover; no `backdrop-filter`, at most two small looping elements, and `prefers-reduced-motion` disables all motion.
 
 ---
 
@@ -84,7 +104,8 @@ A synchronized countdown timer powered by a deterministic milestone engine.
 
 The user interface features a retro 16-bit aesthetic crafted specifically for high visibility, zero cognitive fatigue, and immersion. Core components are styled as classic RPG elements:
 
-- **Boss Timer**: Guardian module for milestone countdowns and deadline alarms.
+- **Title Screen**: Arcade-style landing that boots into the app, with a live demo countdown, CRT scanlines, and level-select tiles.
+- **Boss Timer**: Guardian module for the editable milestone timeline, countdowns and deadline alarms.
 - **Quest Board**: Interactive task management board.
 - **Tome**: Collaborative scratchpad notebook.
 - **Chest**: Shared team file repository.
@@ -112,19 +133,23 @@ HackathonOS/
 │   │   │   ├── team.js       # Central custom React hook managing team session & real-time channels
 │   │   │   └── ui.jsx        # SVG icon library, audio alarm synthesizer & toast utilities
 │   │   ├── modules/
+│   │   │   ├── Landing.jsx   # Arcade title-screen landing (renders before Join for first-time visitors)
 │   │   │   ├── Join.jsx      # Team space creation & 6-character room code entry
-│   │   │   ├── Guardian.jsx  # Boss Timer countdown, milestones & static judging rubrics
-│   │   │   ├── Tasks.jsx     # Quest Board Kanban view
+│   │   │   ├── Guardian.jsx  # Boss Timer: countdown + editable milestone timeline (add/edit/remove gates)
+│   │   │   ├── Tasks.jsx     # Quest Board Kanban view + one-click submission-checklist seed
 │   │   │   ├── Notes.jsx     # Tome collaborative scratchpad
-│   │   │   └── Files.jsx     # Chest file storage & upload manager
-│   │   ├── App.jsx           # Application shell: navigation bar, countdown header, avatars & router
-│   │   ├── index.css         # Pixel design system, retro color tokens & keyframes
+│   │   │   └── Files.jsx     # Chest file storage & signed-URL downloads
+│   │   ├── App.jsx           # Application shell: landing/join gate, nav bar, countdown header, avatars & router
+│   │   ├── index.css         # Pixel design system, retro color tokens, keyframes & title-screen styles
 │   │   └── main.jsx          # React DOM entry point
 │   └── package.json
 └── supabase/
     └── migrations/
-        ├── 001_hackos_team_space.sql    # Core database schema, tables & RLS policies
-        └── 002_editable_milestones.sql   # Extended schema for editable team milestones
+        ├── 001_hackos_team_space.sql     # Core database schema, tables & RLS policies
+        ├── 002_editable_milestones.sql   # Editable team-managed milestone timeline
+        ├── 003_retention.sql             # TTL purge + orphan-file reconciliation
+        ├── 004_hardening_phase1.sql      # Input caps, locked-down audit log & views
+        └── 005_membership_rls.sql        # Anonymous auth + membership-scoped RLS & gated RPCs
 ```
 
 ### Synchronization Matrix
@@ -245,7 +270,9 @@ The codebase was restructured from an AI single-player tool into a dedicated mul
 
 - **AI Layer Removal**: Removed legacy Anthropic API dependencies and agent scripts (`lib/agents.js`).
 - **Simplified Navigation**: Consolidated navigation to focus purely on second-monitor team collaboration.
-- **Embedded References**: Converted judging rubric weights and submission checklists into static reference modules within the Guardian view.
+- **Editable Timeline**: Replaced the fixed milestone template with a team-managed timeline (add, edit, remove and hard/soft-toggle gates); `genMilestones` now seeds an optional 11-gate "Classic plan" at creation.
+- **Repurposed Checklist**: The old static judging rubric was retired; the demo-recording checklist became an optional one-click seed on the Quest Board instead of a fixed panel.
+- **Arcade Landing**: Added a title-screen landing route that boots into the app for first-time visitors.
 
 ---
 
