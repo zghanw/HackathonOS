@@ -208,13 +208,15 @@ All database tables are namespaced with the `hackos_` prefix.
 To host your own backend instance on Supabase:
 
 1. Create a new project in [Supabase](https://supabase.com/).
-2. Open the **SQL Editor** in your Supabase Dashboard.
-3. Run the migration scripts in sequential order:
-   - [001_hackos_team_space.sql](supabase/migrations/001_hackos_team_space.sql) (Base schema & security rules)
-   - [002_editable_milestones.sql](supabase/migrations/002_editable_milestones.sql) (Milestone engine schema extensions)
-4. Enable **Supabase Realtime** for `hackos_*` tables under Database → Realtime settings.
-5. Create a Storage Bucket named `hackos_files` with public or authenticated access depending on your needs.
-6. Copy your project URL and public anon key into `frontend/.env`.
+2. Enable **anonymous sign-ins** under Authentication → Sign In / Providers → Anonymous. Migration `005` scopes all access to the `authenticated` role, so the app depends on this; turning it on before you run the migrations avoids a locked-out state.
+3. Open the **SQL Editor** and run every migration in order:
+   - [001_hackos_team_space.sql](supabase/migrations/001_hackos_team_space.sql) — base schema, RLS, the Realtime publication, and the `hackos-files` storage bucket
+   - [002_editable_milestones.sql](supabase/migrations/002_editable_milestones.sql) — editable team-managed milestone timeline
+   - [003_retention.sql](supabase/migrations/003_retention.sql) — TTL retention purge + orphan-file reconciliation
+   - [004_hardening_phase1.sql](supabase/migrations/004_hardening_phase1.sql) — input caps + locked-down audit log and views
+   - [005_membership_rls.sql](supabase/migrations/005_membership_rls.sql) — anonymous auth + membership-scoped RLS, gated RPCs, private bucket
+4. There is **nothing to set up by hand**: the migrations create the Realtime publication and the private `hackos-files` bucket for you (`001` creates the bucket, `005` makes it private and gates it by membership, which is why step 2 comes first).
+5. Copy your project URL and publishable (anon) key into `frontend/.env` (see [.env.example](frontend/.env.example)). The retention sweeper additionally needs the service-role key — see the [Data Retention](#data-retention-ttl) and [Security Model](#security-model) sections.
 
 > **Wake the backend before the event.** Supabase free-tier projects pause automatically after about a week of inactivity, and a paused project stops resolving its hostname entirely. The app then fails at the first request: no team create, no join, no presence, no gates. Open the Supabase dashboard (or hit any table) a day before the hackathon and confirm the project reads `ACTIVE_HEALTHY`. Restoring takes a few minutes, which is time you will not have on demo day.
 
