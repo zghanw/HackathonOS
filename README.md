@@ -33,14 +33,14 @@ Traditional project management tools like Notion, Trello, and Slack treat time a
 ## Preview
 
 <div align="center">
-  <b>Title Screen</b> — the landing that boots into the app, with a live countdown as the hero<br/>
+  <b>Title Screen</b>: the landing that boots into the app, with a live countdown as the hero<br/>
   <img src="docs/landing.png" alt="Hackathon OS arcade title-screen landing page" width="100%" />
 </div>
 
 <br />
 
 <div align="center">
-  <b>Boss Timer</b> — the shared deadline guardian<br/>
+  <b>Boss Timer</b>: the shared deadline guardian<br/>
   <img src="docs/after-guardian.png" alt="Hackathon OS Guardian Boss Timer" width="100%" />
 </div>
 
