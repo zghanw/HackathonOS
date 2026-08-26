@@ -33,6 +33,13 @@ Traditional project management tools like Notion, Trello, and Slack treat time a
 ## Preview
 
 <div align="center">
+  <b>Showcase Video</b><br/>
+  <img src="docs/Knight-Showcase.gif" alt="Hackathon OS showcase" width="100%" />
+</div>
+
+<br>
+
+<div align="center">
   <b>Title Screen</b>: the landing that boots into the app, with a live countdown as the hero<br/>
   <img src="docs/landing.png" alt="Hackathon OS arcade title-screen landing page" width="100%" />
 </div>
